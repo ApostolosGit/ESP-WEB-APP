@@ -25,7 +25,7 @@ window.EnergyHistory = (() => {
   const hourLabel = epoch => hourFormat.format(new Date(epoch * 1000));
   const number = n => numberFormat.format(Number(n));
   const zoneNames = ['Ζ1','Ζ2 πρωί','Ζ2 βράδυ'];
-  const colors = ['#548ae8','#16a58a','#9066d8'];
+  const colors = ['#ff9800','#ffd600','#000000'];
   const xml = value => String(value)
     .replaceAll('&','&amp;')
     .replaceAll('<','&lt;')
