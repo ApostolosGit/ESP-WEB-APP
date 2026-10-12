@@ -52,7 +52,7 @@ const server=http.createServer((req,res)=>{
  await page.setViewportSize({width:1000,height:650});
  await page.evaluate(()=>{
   const dialog=document.querySelector('.energy-history-dialog');dialog.showModal();
-  document.getElementById('energyHistoryRange').value='7';
+  document.getElementById('energyHistoryRange').value='30';
   document.getElementById('energyHistoryPlot').innerHTML=EnergyHistory.svg([
    {label:'01/10',values:[5.25,-3.125,0],flags:0},
    {label:'02/10',values:[3.96,-6.94,1.5],flags:1},
@@ -63,13 +63,17 @@ const server=http.createServer((req,res)=>{
    {label:'07/10',values:[1.08,-.731,.289],flags:16}
   ],true);
  });
- assert.equal(await page.locator('.bar-value').count(),18);
+ assert.equal(await page.locator('.bar-value').count(),6);
+ assert.equal(await page.locator('.energy-history-plot svg rect').count(),17);
  const geometry=await page.locator('.energy-history-plot svg').evaluate(svg=>{
-  const labels=[...svg.querySelectorAll('.bar-value')],rects=[...svg.querySelectorAll('rect')];
-  return labels.map((text,i)=>{const box=text.getBBox(),rect=rects[i];return {number:text.textContent,top:box.y,bottom:box.y+box.height,barTop:+rect.getAttribute('y'),left:box.x,right:box.x+box.width,center:+text.getAttribute('x')};});
+  const labels=[...svg.querySelectorAll('.bar-value')].map(text=>{const box=text.getBBox();return {text:text.textContent,left:box.x,right:box.x+box.width,top:box.y,bottom:box.y+box.height,x:+text.getAttribute('x')};});
+  const rects=[...svg.querySelectorAll('rect')].map(rect=>({x:+rect.getAttribute('x'),y:+rect.getAttribute('y'),h:+rect.getAttribute('height')}));
+  return {labels,rects,height:svg.viewBox.baseVal.height};
  });
- for(const label of geometry) assert(label.top>=0&&label.bottom<label.barTop,'Value must fit above its bar: '+label.number);
- for(let i=1;i<geometry.length;i++) assert(geometry[i-1].right<geometry[i].left,'Value labels must not overlap');
+ for(const label of geometry.labels) assert(label.top>=0&&label.bottom<=geometry.height,'Total label must stay inside SVG: '+label.text);
+ for(let i=1;i<geometry.labels.length;i++) assert(geometry.labels[i-1].right<geometry.labels[i].left,'Hourly/daily total labels must not overlap');
+ const xGroups=[...new Set(geometry.rects.map(rect=>rect.x))];
+ assert.equal(xGroups.length,6,'Stacked tariff segments must share one X position per non-empty block');
  await page.screenshot({path:path.join(artifacts,'chart.png')});
- await browser.close();server.close();console.log('Real-browser retained ghost vs two live meters, legacy site recovery, desktop/mobile buttons, no mobile overflow, 18 signed bar labels above bars PASS');
+ await browser.close();server.close();console.log('Real-browser retained ghost vs live meters, desktop/mobile buttons and six stacked tariff blocks PASS');
 })().catch(e=>{console.error(e);server.close();process.exit(1);});
