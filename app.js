@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.56";
+  const APP_VERSION = "5.57";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -1995,7 +1995,7 @@
   const historyDialog = document.createElement('dialog');
   historyDialog.className = 'modal energy-history-dialog';
   historyDialog.innerHTML = `<div class="dialog-head"><h2>Ιστορικό ενέργειας</h2><button type="button" id="closeEnergyHistory">Κλείσιμο</button></div>
-    <div class="history-controls"><select id="energyHistoryRange"><option value="24">Τελευταίες 24 ώρες</option><option value="7">Τελευταίες 7 ημέρες</option><option value="30">Τελευταίες 30 ημέρες</option></select><button id="reloadEnergyHistory" type="button">Ανανέωση</button></div>
+    <div class="history-controls"><select id="energyHistoryRange"><option value="48">Τελευταίες 48 ώρες · ανά ώρα</option><option value="30">Τελευταίες 30 ημέρες</option></select><button id="reloadEnergyHistory" type="button">Ανανέωση</button></div>
     <p id="energyHistoryStatus"></p><div id="energyHistoryMemory"></div><div id="energyHistoryPlot" class="energy-history-plot"></div><div id="energyHistoryTable"></div>
     <p class="history-note">Ισοζύγιο = εισαγωγή − εξαγωγή. Θετικό: ενέργεια από το δίκτυο. Αρνητικό: πλεόνασμα προς το δίκτυο. Δεν είναι η συνολική παραγωγή Φ/Β. ×: χωρίς καταγραφή. Αχνές μπάρες: τρέχουσα, μερική ή εκτιμώμενη περίοδος. Η καταγραφή ξεκινά με τη V5.00· τα παλιά δεδομένα δεν συμπληρώνονται.</p>`;
   document.body.appendChild(historyDialog);
@@ -2006,7 +2006,7 @@
     clearTimeout(h.timer);
     h.offset=offset; h.retry=retry; h.token=(Date.now()+Math.floor(Math.random()*10000))%4000000000+1;
     h.pageRows=0; h.begun=false;
-    client.publish(`${BASE}/${h.id}/admin/request`,`history_get|${h.token}|${h.range===24?0:1}|${offset}`,{qos:0,retain:false});
+    client.publish(`${BASE}/${h.id}/admin/request`,`history_get|${h.token}|${h.range===48?0:1}|${offset}`,{qos:0,retain:false});
     h.timer=setTimeout(()=>{
       if(historySession!==h) return;
       if(retry<2) requestHistoryPage(offset,retry+1);
@@ -2028,20 +2028,23 @@
   }
   function renderEnergyHistory(complete=true) {
     const h=historySession; if(!h) return;
-    const rows=[...h.rows.values()], dual=h.range!==24 && (devices.get(h.id)?.state?.dual_zone===true || devices.get(h.id)?.state?.tariff_mode==='dual');
+    const rows=[...h.rows.values()], dual=devices.get(h.id)?.state?.dual_zone===true || devices.get(h.id)?.state?.tariff_mode==='dual';
     const now=h.meta?.epoch ? new Date(h.meta.epoch*1000) : new Date();
     const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Athens',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
     const part=t=>parts.find(p=>p.type===t).value;
     const today=Math.floor(Date.UTC(+part('year'),+part('month')-1,+part('day'))/86400000);
-    const groups=h.range===24 ? EnergyHistory.intervals(rows) : EnergyHistory.daily(rows,h.range,today);
-    $('energyHistoryPlot').innerHTML=groups.length ? (dual ? '<p class="history-legend">🔵 Ζ1 · 🟢 Ζ2 μεσημεριού · 🟣 Ζ2 νύχτας</p>' : '')+EnergyHistory.svg(groups,dual) : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
-    const names=dual?['Ζ1','Ζ2 μεσημεριού','Ζ2 νύχτας']:['Ζ'];
+    const groups=h.range===48
+      ? EnergyHistory.hourly(rows,48,h.meta?.epoch)
+      : EnergyHistory.daily(rows,30,today);
+    $('energyHistoryPlot').innerHTML=groups.length ? (dual ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">Σ = συνολικό block</span></p>' : '')+EnergyHistory.svg(groups,dual) : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
+    const names=dual?['Ζ1','Ζ2 πρωί','Ζ2 βράδυ','Σύνολο']:['Ζ'];
     $('energyHistoryTable').innerHTML=`<div class="history-table-wrap"><table class="utility-history-table"><thead><tr><th>Περίοδος</th>${names.map(n=>`<th>${n} kWh</th>`).join('')}<th>Καταγραφή</th></tr></thead><tbody>${groups.map(g=>{
       const vs=g.values ? (dual ? g.values : [g.values.reduce((a,b)=>a+b,0)]) : null;
       const flags=g.flags; const status=flags&32?'Χωρίς δεδομένα':[(flags&16?'Τρέχουσα':''),(flags&1?'Μερική':''),(flags&2?'Εκτιμώμενη κατανομή':''),(flags&4?'Επαναφορά μετρητή':''),(flags&8?'Σφάλμα αποθήκευσης':'')].filter(Boolean).join(' · ')||'Καταγεγραμμένη';
-      return `<tr><td title="${escapeHtml(g.detail)}">${escapeHtml(g.label)}</td>${names.map((_,i)=>`<td>${vs?EnergyHistory.number(vs[i]):'—'}</td>`).join('')}<td>${escapeHtml(status)}</td></tr>`;
+      const displayValues=vs && dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
+      return `<tr><td title="${escapeHtml(g.detail)}">${escapeHtml(g.label)}</td>${names.map((_,i)=>`<td>${displayValues?EnergyHistory.number(displayValues[i]):'—'}</td>`).join('')}<td>${escapeHtml(status)}</td></tr>`;
     }).join('')}</tbody></table></div>`;
-    if(complete) historyStatus().textContent=`${h.id} · ${h.range===24?'24 ώρες':h.range+' ημέρες'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
+    if(complete) historyStatus().textContent=`${h.id} · ${h.range===48?'48 ώρες · ανά ώρα':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
     if(h.meta) $('energyHistoryMemory').textContent=`LittleFS: σύνολο ${h.meta.total} / χρησιμοποιημένα ${h.meta.used} / ελεύθερα ${h.meta.free} bytes. RAM με ενεργό MQTT: ${h.meta.heap} bytes, μεγαλύτερο μπλοκ ${h.meta.block}, ελάχιστη RAM σε αυτή την εκκίνηση ${h.meta.minHeap}. ${h.meta.failed?'Πρόβλημα αποθήκευσης ιστορικού.':''}`;
   }
   function handleEnergyHistory(id,text) {
@@ -2049,13 +2052,13 @@
     if(!h || id!==h.id || +p[1]!==h.token) return;
     const nums=p.slice(1).map(Number);
     if(nums.some(n=>!Number.isFinite(n) || !Number.isSafeInteger(n))) return;
-    if(p[0]==='B' && p.length===12 && +p[2]===(h.range===24?0:1)) {
+    if(p[0]==='B' && p.length===12 && +p[2]===(h.range===48?0:1)) {
       h.begun=true; h.pageRows=0;
       h.meta={start:+p[3],total:+p[4],used:+p[5],free:+p[6],heap:+p[7],block:+p[8],minHeap:+p[9],failed:+p[10],epoch:+p[11]};
-    } else if(h.begun && p[0]==='D' && p.length===13 && h.range!==24) {
+    } else if(h.begun && p[0]==='D' && p.length===13 && h.range===30) {
       const row={day:+p[2],first:+p[3],last:+p[4],flags:+p[5],covered:+p[6],wh:p.slice(7).map(Number)};
       h.rows.set(row.day,row); ++h.pageRows;
-    } else if(h.begun && p[0]==='P' && p.length===6 && h.range===24) {
+    } else if(h.begun && p[0]==='P' && p.length===6 && h.range===48) {
       const row={epoch:+p[2],generation:+p[3],import:+p[4],export:+p[5]};
       h.rows.set(row.epoch,row); ++h.pageRows;
     } else if(h.begun && p[0]==='E' && p.length===4) {
@@ -2666,7 +2669,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.56", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.57", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
