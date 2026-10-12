@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.57";
+  const APP_VERSION = "5.58";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -2669,7 +2669,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.57", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.58", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
