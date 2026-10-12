@@ -1,12 +1,12 @@
-const CACHE_NAME = "energy-dds-jsy-pwa-v5.57";
+const CACHE_NAME = "energy-dds-jsy-pwa-v5.58";
 const CACHE_PREFIX = "energy-dds-jsy-pwa-";
 const APP_SCOPE = new URL("./", self.location.href).href;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=5.57",
-  "./app.js?v=5.57",
-  "./history.js?v=5.57",
+  "./style.css?v=5.58",
+  "./app.js?v=5.58",
+  "./history.js?v=5.58",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png"
