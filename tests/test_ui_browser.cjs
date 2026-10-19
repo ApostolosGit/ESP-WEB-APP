@@ -9,7 +9,7 @@ const server=http.createServer((req,res)=>{
  if(!fs.existsSync(full)){res.writeHead(404);res.end();return;}
  let content=fs.readFileSync(full);
  if(file==='index.html') content=Buffer.from(content.toString().replace(/<script[^>]+src="https:[^>]+><\/script>/g,''));
- if(file==='app.js') content=Buffer.from(content.toString().replace(/\}\)\(\);\s*$/,'window.testApp={devices,renderAll,connect};})();'));
+ if(file==='app.js') content=Buffer.from(content.toString().replace(/\}\)\(\);\s*$/,'window.testApp={devices,renderAll,connect,loadEnergyHistory};})();'));
  res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'text/html');res.end(content);
 });
 (async()=>{
@@ -75,5 +75,67 @@ const server=http.createServer((req,res)=>{
  const xGroups=[...new Set(geometry.rects.map(rect=>rect.x))];
  assert.equal(xGroups.length,6,'Stacked tariff segments must share one X position per non-empty block');
  await page.screenshot({path:path.join(artifacts,'chart.png')});
- await browser.close();server.close();console.log('Real-browser retained ghost vs live meters, desktop/mobile buttons and six stacked tariff blocks PASS');
+
+ // Feed genuine MQTT history frames into the real APP DOM: 48 hourly slots,
+ // both comparison rows, table visibility toggle and downloadable Greek CSV.
+ await page.evaluate(()=>{
+  window.mockClient.publish=(topic,payload)=>{window.historyPublish={topic,payload};};
+  document.getElementById('energyHistoryRange').value='48';
+  const id='jsy_house-84F3EB041E89';
+  testApp.loadEnergyHistory(id);
+  const token=window.historyPublish.payload.split('|')[1];
+  const anchor=Date.parse('2026-10-19T12:00:00+03:00')/1000;
+  frame(id,'admin/history',`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+  for(let i=0;i<=96;i++) {
+   const ep=anchor-48*3600+i*1800;
+   frame(id,'admin/history',`P|${token}|${ep}|1|${5000+i*120}|0`);
+  }
+  frame(id,'admin/history',`E|${token}|-1|97`);
+ });
+ assert.equal(await page.locator('.history-comparison-panel').count(),2);
+ assert.deepEqual(await page.locator('.history-comparison-panel h3').allTextContents(),['Πρόσφατες 24 ώρες','Προηγούμενες 24 ώρες']);
+ assert.equal(await page.locator('.history-comparison-panel svg').count(),2);
+ assert.equal(await page.locator('.history-comparison-panel svg text[y="282"]').count(),24);
+ const aligned=await page.locator('.history-comparison-panel svg').evaluateAll(svgs=>svgs.map(svg=>({
+   viewBox:svg.getAttribute('viewBox'),
+   left:svg.getBoundingClientRect().left,
+   width:svg.getBoundingClientRect().width,
+   axis:[...svg.querySelectorAll('text[x="50"]')].map(t=>t.textContent)
+ })));
+ // The full 48-hour fixture covers all three Greek time-of-day zones in
+ // each row, not merely in the legend.
+ const hourColors=await page.locator('.history-comparison-panel svg').evaluateAll(svgs=>svgs.map(svg=>[
+  ...new Set([...svg.querySelectorAll('rect')].map(rect=>rect.getAttribute('fill')))
+ ]));
+ for(const palette of hourColors) for(const color of ['#ff9800','#ffd600','#000000'])
+  assert(palette.includes(color),'Missing time-of-day bar color '+color);
+ assert.equal(aligned[0].viewBox,aligned[1].viewBox);
+ assert.deepEqual(aligned[0].axis,aligned[1].axis);
+ assert(Math.abs(aligned[0].left-aligned[1].left)<1,'24-hour comparisons must align on X');
+ assert.equal(await page.locator('#energyHistoryTable').isVisible(),false);
+ assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),true);
+ await page.locator('#energyHistoryTableToggle').click();
+ assert.equal(await page.locator('#energyHistoryTable').isVisible(),true);
+ assert.equal(await page.locator('#energyHistoryTable tbody tr').count(),48);
+ await page.locator('#energyHistoryTableToggle').click();
+ assert.equal(await page.locator('#energyHistoryTable').isVisible(),false);
+ const [download]=await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#exportEnergyHistoryCsv').click()
+ ]);
+ assert.match(download.suggestedFilename(),/-48h\.csv$/);
+ const csv=fs.readFileSync(await download.path(),'utf8');
+ assert(csv.startsWith('\uFEFF"Περίοδος";"Ζ1 kWh";'));
+ assert.equal(csv.trim().split('\r\n').length,49);
+ await page.screenshot({path:path.join(artifacts,'compare-48h.png')});
+ await page.setViewportSize({width:390,height:850});
+ const mobileCharts=await page.evaluate(()=>({
+  viewport:innerWidth,scroll:document.documentElement.scrollWidth,
+  plot:document.getElementById('energyHistoryPlot').getBoundingClientRect().width,
+  content:document.querySelector('.history-comparison').getBoundingClientRect().width
+ }));
+ assert(mobileCharts.scroll<=mobileCharts.viewport,'History modal must not overflow mobile viewport');
+ assert(mobileCharts.content>mobileCharts.plot,'Wide charts should scroll inside plot on mobile');
+ await page.screenshot({path:path.join(artifacts,'compare-48h-mobile.png')});
+ await browser.close();server.close();console.log('Real-browser responsive 24h comparison, collapsed table/reveal, UTF-8 CSV export and existing UI PASS');
 })().catch(e=>{console.error(e);server.close();process.exit(1);});

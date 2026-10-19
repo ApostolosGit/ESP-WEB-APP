@@ -77,6 +77,51 @@ assert.equal(full48[0].epoch-full48.at(-1).epoch,47*3600);
 const full48Svg=H.svg(full48,true);
 assert.equal((full48Svg.match(/ y="282" /g)||[]).length,24);
 assert(full48Svg.indexOf(full48[0].label)<full48Svg.indexOf(full48[2].label));
+// Comparison mode renders 24 hourly slots per row, 12 time ticks in each,
+// and uses a shared Y range even if one day consumes much more than the other.
+const comparison=full48.map((g,i)=>({...g,values:i<24?[1,0,0]:[5,0,0],flags:0}));
+const latestSvg=H.svg(comparison.slice(0,24),true,comparison);
+const earlierSvg=H.svg(comparison.slice(24,48),true,comparison);
+assert.equal((latestSvg.match(/ y="282" /g)||[]).length,12);
+assert.equal((earlierSvg.match(/ y="282" /g)||[]).length,12);
+assert.equal((latestSvg.match(/<rect /g)||[]).length,24);
+assert.equal((earlierSvg.match(/<rect /g)||[]).length,24);
+assert.equal(latestSvg.match(/viewBox="([^"]+)"/)[1],earlierSvg.match(/viewBox="([^"]+)"/)[1]);
+assert.equal(
+  [...latestSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join(''),
+  [...earlierSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join('')
+);
+// In the hourly view, bar and 2-hour X-axis colors follow local Athens
+// tariff hours rather than the browser timezone, including summer/winter.
+const tariffCases=[
+  ['2026-01-15T08:00:00+02:00',0,'#ff9800'], // winter Z1
+  ['2026-01-15T13:00:00+02:00',1,'#ffd600'], // winter Z2 day
+  ['2026-01-15T03:00:00+02:00',2,'#000000'], // winter Z2 night
+  ['2026-07-15T08:00:00+03:00',0,'#ff9800'], // summer Z1
+  ['2026-07-15T12:00:00+03:00',1,'#ffd600'], // summer Z2 day
+  ['2026-07-15T03:00:00+03:00',2,'#000000']  // summer Z2 night
+];
+for(const [time,zone,color] of tariffCases) {
+  const epoch=Date.parse(time)/1000;
+  const group={epoch,label:'ώρες',values:[1,0,0],flags:0};
+  assert.equal(H.tariffZone(epoch+1800),zone);
+  const colored=H.svg([group],false);
+  assert(colored.includes(`fill="${color}" data-hour-zone="${zone}"`));
+  assert(colored.includes(`y="282" text-anchor="middle" fill="${color}"`));
+  // The dual-tariff graph continues to preserve real zone-segment colors.
+  const dualGroup={...group,values:[zone===0?1:0,zone===1?1:0,zone===2?1:0]};
+  assert(H.svg([dualGroup],true).includes(`fill="${color}" data-hour-zone="${zone}"`));
+}
+const anchorSummer=Date.parse('2026-07-15T14:00:00+03:00')/1000;
+const summerPoints=Array.from({length:97},(_,i)=>({
+  epoch:anchorSummer-48*3600+i*1800,generation:1,import:i*100,export:0
+}));
+const summer48=H.hourly(summerPoints,48,anchorSummer);
+for(const halfDay of [summer48.slice(0,24),summer48.slice(24,48)]) {
+  const chartHtml=H.svg(halfDay,true,summer48);
+  for(const color of ['#ff9800','#ffd600','#000000'])
+    assert(chartHtml.includes(`fill="${color}"`),`Missing zone ${color} in one 24h plot`);
+}
 const css=fs.readFileSync(resolve(root,'style.css'),'utf8');
 assert(css.includes('.legend-z1::before { background:#ff9800; }'));
 assert(css.includes('.legend-z2-day::before { background:#ffd600; }'));
@@ -122,6 +167,10 @@ assert($('energyHistoryPlot').innerHTML.includes('<svg'));
 assert($('energyHistoryTable').innerHTML.includes('Ζ2 πρωί'));
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert($('energyHistoryTable').innerHTML.includes('Χωρίς δεδομένα'));
+assert.equal($('energyHistoryTable').hidden,true,'History table stays hidden by default');
+assert.equal($('exportEnergyHistoryCsv').disabled,false);
+assert.equal(context.historySession.csvRows.length,31);
+assert.equal(context.historySession.csvRows[0][0],'Περίοδος');
 assert($('energyHistoryStatus').textContent.includes('30 ημέρες · νεότερη → παλαιότερη'));
 
 context.loadEnergyHistory('test');
@@ -142,13 +191,19 @@ feed(`P|${token}|${p0+1800}|1|1600|100`);
 feed(`P|${token}|${p0+3600}|1|2300|200`);
 feed(`E|${token}|-1|3`);
 assert($('energyHistoryStatus').textContent.includes('48 ώρες · ανά ώρα'));
+assert.equal(($('energyHistoryPlot').innerHTML.match(/<svg /g)||[]).length,2);
+assert($('energyHistoryPlot').innerHTML.includes('Πρόσφατες 24 ώρες'));
+assert($('energyHistoryPlot').innerHTML.includes('Προηγούμενες 24 ώρες'));
+assert.equal($('energyHistoryTable').hidden,true);
+assert.equal(context.historySession.csvRows.length,49);
+assert.equal(context.historySession.csvRows[0].length,6);
 assert.equal(context.historySession.rows.size,3);
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 
 assert(!code.includes('<option value="7">'));
 assert(code.includes('<option value="48">Τελευταίες 48 ώρες · ανά ώρα</option>'));
 assert(code.includes('`${BASE}/+/admin/history`'));
-assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.59'));
+assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.60'));
 assert(fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('history.js')<fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('app.js'));
 // The firmware sends the first 16 checkpoints with a 24h cutoff, then E
 // exposes the checkpoint cursor. The APP must rewind and fetch older records.
@@ -177,4 +232,4 @@ const chrono=H.hourly([...context.historySession.rows.values()],48,anchor);
 assert(chrono[0].epoch>chrono.at(-1).epoch);
 assert(chrono.some(g=>g.values && g.epoch<=anchor-43*3600));
 // Prior GitHub CI had an outdated v5.57 assertion; v5.59 is now consistent.
-console.log('APP v5.59: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');
+console.log('APP v5.60: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');

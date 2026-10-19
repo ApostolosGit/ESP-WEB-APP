@@ -140,8 +140,11 @@ window.EnergyHistory = (() => {
     }).reverse(); // Newest hour first, matching the chart and table order.
   }
 
-  function svg(groups, dual) {
-    const prepared = groups.map(group => {
+  // comparisonGroups supplies a shared Y scale and bar spacing for two
+  // stacked 24-hour plots; their hour positions align while values remain
+  // comparable. Existing single-chart callers can omit the third argument.
+  function svg(groups, dual, comparisonGroups = groups) {
+    const prepare = group => {
       if (!group.values) return null;
       const values = dual
         ? group.values.map(Number)
@@ -151,10 +154,11 @@ window.EnergyHistory = (() => {
         labels:values.map(number),
         total:values.reduce((sum, value) => sum + value, 0)
       };
-    });
+    };
+    const prepared = groups.map(prepare);
 
     let max = 0, min = 0, slot = dual ? 58 : 50;
-    for (const group of prepared) {
+    for (const group of comparisonGroups.map(prepare)) {
       if (!group) continue;
       if (dual) {
         const positive = group.values.filter(v => v > 0).reduce((a,b) => a+b, 0);
@@ -183,6 +187,11 @@ window.EnergyHistory = (() => {
     groups.forEach((group, i) => {
       const center = 55 + i * step + step / 2;
       const data = prepared[i];
+      // Hourly points carry their UTC epoch. Resolve the matching tariff
+      // from the midpoint in Europe/Athens (DST-safe), not from browser time.
+      const hourZone = Number.isFinite(group.epoch)
+        ? tariffZone(group.epoch + HOUR / 2)
+        : null;
       if (!data) {
         out += `<text x="${center}" y="${zero-5}" text-anchor="middle" fill="#7a8b95" font-size="13">×</text>`;
       } else if (!dual) {
@@ -191,7 +200,7 @@ window.EnergyHistory = (() => {
         const barTop = value >= 0 ? yy : zero;
         const barWidth = Math.max(8, Math.min(42, step - 10));
         const heightPx = Math.max(value === 0 ? 1 : 2, Math.abs(yy - zero));
-        out += `<rect x="${center-barWidth/2}" y="${barTop}" width="${barWidth}" height="${heightPx}" fill="${colors[0]}" opacity="${group.flags?'.55':'1'}"><title>${xml(group.label)} · Ζ: ${data.labels[0]} kWh</title></rect>`;
+        out += `<rect x="${center-barWidth/2}" y="${barTop}" width="${barWidth}" height="${heightPx}" fill="${colors[hourZone ?? 0]}" data-hour-zone="${hourZone ?? 0}" opacity="${group.flags?'.55':'1'}"><title>${xml(group.label)} · ${hourZone===null?'Ζ':zoneNames[hourZone]}: ${data.labels[0]} kWh</title></rect>`;
         out += `<text class="bar-value" x="${center}" y="${Math.max(12,barTop-6)}" text-anchor="middle" fill="#263d4b" font-size="11" font-weight="600">${data.labels[0]}</text>`;
       } else {
         const barWidth = Math.max(16, Math.min(44, step - 12));
@@ -203,7 +212,7 @@ window.EnergyHistory = (() => {
           const yFrom = y(from), yTo = y(to);
           const rectY = Math.min(yFrom, yTo);
           const rectH = Math.max(2, Math.abs(yTo - yFrom));
-          out += `<rect x="${center-barWidth/2}" y="${rectY}" width="${barWidth}" height="${rectH}" fill="${colors[j]}" opacity="${group.flags?'.62':'1'}"><title>${xml(group.label)} · ${zoneNames[j]}: ${data.labels[j]} kWh</title></rect>`;
+          out += `<rect x="${center-barWidth/2}" y="${rectY}" width="${barWidth}" height="${rectH}" fill="${colors[j]}" data-hour-zone="${j}" opacity="${group.flags?'.62':'1'}"><title>${xml(group.label)} · ${zoneNames[j]}: ${data.labels[j]} kWh</title></rect>`;
           if (rectH >= 16) {
             out += `<text class="segment-value" x="${center}" y="${rectY+rectH/2+4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">${data.labels[j]}</text>`;
           }
@@ -220,7 +229,7 @@ window.EnergyHistory = (() => {
         ? i % 2 === 0
         : (groups.length <= 30 || i % 4 === 0 || i === groups.length - 1);
       if (showLabel) {
-        out += `<text x="${center}" y="282" text-anchor="middle" fill="#526576" font-size="10">${xml(group.label)}</text>`;
+        out += `<text x="${center}" y="282" text-anchor="middle" fill="${hourZone===null?'#526576':colors[hourZone]}" font-size="10" font-weight="${hourZone===null?'400':'700'}">${xml(group.label)}</text>`;
       }
     });
 
