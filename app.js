@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.60";
+  const APP_VERSION = "5.61";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -50,6 +50,9 @@
   let utilityHistoryDeviceId = null;
   let utilityListIntent = "summary";
   const MIN_DEVIATION_KWH = 1.0;
+  const ENERGY_PRICE_KEY = "energy.pricePerKwh";
+  const DEFAULT_ENERGY_PRICE = 0.25; // €/kWh, editable locally in Settings.
+  let energyPricePerKwh = DEFAULT_ENERGY_PRICE;
 
   const $ = (id) => document.getElementById(id);
 
@@ -73,6 +76,9 @@
     pathInput: $("pathInput"),
     usernameInput: $("usernameInput"),
     passwordInput: $("passwordInput"),
+    energyPriceInput: $("energyPriceInput"),
+    saveEnergyPriceBtn: $("saveEnergyPriceBtn"),
+    energyPriceStatus: $("energyPriceStatus"),
     adminDialog: $("adminDialog"),
     closeAdminBtn: $("closeAdminBtn"),
     adminEyebrow: $("adminEyebrow"),
@@ -223,6 +229,45 @@
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
     });
+  }
+
+  // Accept Greek decimal commas and dots; blank disables estimated costs.
+  // Invalid prices do not silently overwrite the user's saved preference.
+  function parseEnergyPrice(raw) {
+    const value = String(raw ?? "").trim();
+    if (!value) return null;
+    if (!/^\\d{1,3}(?:[.,]\\d{1,4})?$/.test(value)) return undefined;
+    const parsed = Number(value.replace(",", "."));
+    return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
+      ? parsed : undefined;
+  }
+
+  function estimatedCostText(value) {
+    if (energyPricePerKwh === null || !Number.isFinite(Number(value))) return "";
+    const euros = Number(value) * energyPricePerKwh;
+    return "(" + euros.toLocaleString("el-GR", { maximumFractionDigits:2 }) + "€)";
+  }
+
+  function saveEnergyPrice() {
+    const parsed = parseEnergyPrice(ui.energyPriceInput.value);
+    if (parsed === undefined) {
+      ui.energyPriceStatus.textContent = "Δώσε τιμή 0–100 €/kWh (έως 4 δεκαδικά).";
+      ui.energyPriceInput.focus?.();
+      return false;
+    }
+    try {
+      localStorage.setItem(ENERGY_PRICE_KEY, parsed === null ? "" : String(parsed));
+    } catch (_) {
+      ui.energyPriceStatus.textContent = "Δεν ήταν δυνατή η τοπική αποθήκευση.";
+      return false;
+    }
+    energyPricePerKwh = parsed;
+    ui.energyPriceInput.value = parsed === null ? "" : String(parsed).replace(".", ",");
+    ui.energyPriceStatus.textContent = parsed === null
+      ? "Η εμφάνιση ποσού απενεργοποιήθηκε."
+      : "Η τιμή αποθηκεύτηκε.";
+    renderAll();
+    return true;
   }
 
   function setDot(element, state) {
@@ -380,11 +425,13 @@
   function tariffRow(label, value, unit = "kWh", extra = "", digits = 2, suffix = "") {
     const missing = value === null || value === undefined || value === "";
     const display = missing ? "—" : formatNumber(value, digits);
+    const cost = label === "Διαφορά" && !missing && unit === "kWh"
+      ? estimatedCostText(value) : "";
     return `
       <div class="tariff-row ${extra}">
         <span class="tariff-row-label">${escapeHtml(label)}</span>
         <span class="tariff-row-colon">:</span>
-        <b class="tariff-row-value">${escapeHtml(display)}${!missing && unit ? ` <small>${escapeHtml(unit)}</small>` : ""}${!missing && suffix ? ` ${escapeHtml(suffix)}` : ""}</b>
+        <b class="tariff-row-value">${escapeHtml(display)}${!missing && unit ? ` <small>${escapeHtml(unit)}</small>` : ""}${cost ? ` <small class="tariff-estimated-cost">${escapeHtml(cost)}</small>` : ""}${!missing && suffix ? ` ${escapeHtml(suffix)}` : ""}</b>
       </div>`;
   }
 
@@ -2263,6 +2310,13 @@
     ui.pathInput.value = localStorage.getItem("energy.path") || DEFAULTS.path;
     ui.usernameInput.value = localStorage.getItem("energy.username") || "";
     ui.passwordInput.value = "";
+    const storedPrice = localStorage.getItem(ENERGY_PRICE_KEY);
+    if (storedPrice !== null) {
+      const parsed = parseEnergyPrice(storedPrice);
+      if (parsed !== undefined) energyPricePerKwh = parsed;
+    }
+    ui.energyPriceInput.value = energyPricePerKwh === null ? ""
+      : String(energyPricePerKwh).replace(".", ",");
   }
 
   function saveNonSecretSettings(settings) {
@@ -2470,8 +2524,14 @@
   ui.closeSettingsBtn.addEventListener("click", () => ui.settingsDialog.close());
   ui.disconnectBtn.addEventListener("click", () => disconnect(true));
 
+  ui.saveEnergyPriceBtn.addEventListener("click", saveEnergyPrice);
+  ui.energyPriceInput.addEventListener("input", () => {
+    ui.energyPriceStatus.textContent = "";
+  });
+
   ui.settingsForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!saveEnergyPrice()) return;
     connect({
       host: ui.hostInput.value.trim(),
       port: ui.portInput.value.trim(),
@@ -2732,7 +2792,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.60", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.61", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
