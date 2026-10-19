@@ -140,8 +140,11 @@ window.EnergyHistory = (() => {
     }).reverse(); // Newest hour first, matching the chart and table order.
   }
 
-  function svg(groups, dual) {
-    const prepared = groups.map(group => {
+  // comparisonGroups supplies a shared Y scale and bar spacing for two
+  // stacked 24-hour plots; their hour positions align while values remain
+  // comparable. Existing single-chart callers can omit the third argument.
+  function svg(groups, dual, comparisonGroups = groups) {
+    const prepare = group => {
       if (!group.values) return null;
       const values = dual
         ? group.values.map(Number)
@@ -151,10 +154,11 @@ window.EnergyHistory = (() => {
         labels:values.map(number),
         total:values.reduce((sum, value) => sum + value, 0)
       };
-    });
+    };
+    const prepared = groups.map(prepare);
 
     let max = 0, min = 0, slot = dual ? 58 : 50;
-    for (const group of prepared) {
+    for (const group of comparisonGroups.map(prepare)) {
       if (!group) continue;
       if (dual) {
         const positive = group.values.filter(v => v > 0).reduce((a,b) => a+b, 0);
