@@ -148,7 +148,7 @@ assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert(!code.includes('<option value="7">'));
 assert(code.includes('<option value="48">Τελευταίες 48 ώρες · ανά ώρα</option>'));
 assert(code.includes('`${BASE}/+/admin/history`'));
-assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.59'));
+assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.60'));
 assert(fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('history.js')<fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('app.js'));
 // The firmware sends the first 16 checkpoints with a 24h cutoff, then E
 // exposes the checkpoint cursor. The APP must rewind and fetch older records.
@@ -177,4 +177,4 @@ const chrono=H.hourly([...context.historySession.rows.values()],48,anchor);
 assert(chrono[0].epoch>chrono.at(-1).epoch);
 assert(chrono.some(g=>g.values && g.epoch<=anchor-43*3600));
 // Prior GitHub CI had an outdated v5.57 assertion; v5.59 is now consistent.
-console.log('APP v5.59: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');
+console.log('APP v5.60: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');
