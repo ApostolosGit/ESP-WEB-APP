@@ -43,6 +43,45 @@ const server=http.createServer((req,res)=>{
  assert.deepEqual(await firstActions.locator('button').evaluateAll(bs=>bs.map(b=>b.dataset.action)),['admin','history','refresh']);
  const colors=await firstActions.locator('button').evaluateAll(bs=>bs.map(b=>({bg:getComputedStyle(b).backgroundColor,fg:getComputedStyle(b).color})));
  assert.deepEqual(colors[1],colors[2]);assert.notEqual(colors[0].bg,colors[2].bg);
+ // Real MQTT states: all 'Διαφορά' amounts use the configurable €/kWh
+ // without changing meter readings. Typography matches the kWh unit.
+ await page.evaluate(()=>{
+  frame('DDS-5CCF7FF0904F','state',{
+   meter:'DDS238',firmware:'5.56',dual_zone:false,
+   power:23,current:.35,voltage:236,has_utility:true,estimate_valid:true,
+   z_ref:40,z_now:100,z_diff:60
+  });
+  frame('jsy_house-84F3EB041E89','state',{
+   meter:'JSY-MK-333',firmware:'5.56',dual_zone:true,
+   power_total:800,has_utility:true,estimate_valid:true,
+   z1_ref:40,z1_now:100,z1_diff:60,z2_ref:8,z2_now:12,z2_diff:4
+  });
+ });
+ const ddsCost=page.locator('article[data-device="DDS-5CCF7FF0904F"] .tariff-estimated-cost');
+ assert.equal(await ddsCost.textContent(),'(15€)');
+ const costSizes=await ddsCost.evaluate(node=>({
+  cost:getComputedStyle(node).fontSize,
+  unit:getComputedStyle(node.parentElement.querySelector('small:not(.tariff-estimated-cost)')).fontSize
+ }));
+ assert.equal(costSizes.cost,costSizes.unit,'Euro amount should match kWh font size');
+ assert.deepEqual(await page.locator('article[data-device="jsy_house-84F3EB041E89"] .tariff-estimated-cost').allTextContents(),['(15€)','(1€)']);
+ await page.locator('#settingsBtn').click();
+ assert.equal(await page.locator('#energyPriceInput').inputValue(),'0,25');
+ await page.locator('#energyPriceInput').fill('0,30');
+ await page.locator('#saveEnergyPriceBtn').click();
+ assert.equal(await page.evaluate(()=>localStorage.getItem('energy.pricePerKwh')),'0.3');
+ await page.locator('#closeSettingsBtn').click();
+ assert.equal(await ddsCost.textContent(),'(18€)');
+ await page.locator('#settingsBtn').click();
+ await page.locator('#energyPriceInput').fill('');
+ await page.locator('#saveEnergyPriceBtn').click();
+ await page.locator('#closeSettingsBtn').click();
+ assert.equal(await page.locator('.tariff-estimated-cost').count(),0);
+ await page.locator('#settingsBtn').click();
+ await page.locator('#energyPriceInput').fill('0,25');
+ await page.locator('#saveEnergyPriceBtn').click();
+ await page.locator('#closeSettingsBtn').click();
+ assert.equal(await ddsCost.textContent(),'(15€)');
  await page.screenshot({path:path.join(artifacts,'desktop.png')});
  await page.setViewportSize({width:390,height:850});
  await page.screenshot({path:path.join(artifacts,'mobile.png')});

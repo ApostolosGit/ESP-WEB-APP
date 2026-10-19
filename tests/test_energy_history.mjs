@@ -203,7 +203,7 @@ assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert(!code.includes('<option value="7">'));
 assert(code.includes('<option value="48">Τελευταίες 48 ώρες · ανά ώρα</option>'));
 assert(code.includes('`${BASE}/+/admin/history`'));
-assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.60'));
+assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.61'));
 assert(fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('history.js')<fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('app.js'));
 // The firmware sends the first 16 checkpoints with a 24h cutoff, then E
 // exposes the checkpoint cursor. The APP must rewind and fetch older records.

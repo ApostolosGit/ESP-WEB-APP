@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.60">
+  <link rel="stylesheet" href="style.css?v=5.61">
 </head>
 <body>
   <div class="app-shell">
@@ -56,7 +56,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.60</span>
+      <span>MQTT.app. v5.61</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -97,6 +97,18 @@
         <input id="passwordInput" name="mqtt_password" type="password" autocomplete="section-mqtt current-password" required placeholder="HiveMQ password">
       </label>
 
+      <section class="energy-price-settings" aria-labelledby="energyPriceTitle">
+        <h3 id="energyPriceTitle">Κόστος ενέργειας</h3>
+        <label for="energyPriceInput">Τιμή ενέργειας (€/kWh)
+          <input id="energyPriceInput" type="text" inputmode="decimal" autocomplete="off" value="0,25"
+                 placeholder="π.χ. 0,25" aria-describedby="energyPriceHelp">
+        </label>
+        <p id="energyPriceHelp" class="privacy-note">Ενδεικτική τιμή ανά kWh για τον υπολογισμό της «Διαφοράς». Χωρίς πάγια ή άλλες χρεώσεις. Άφησέ το κενό για να μη φαίνεται ποσό.</p>
+        <div class="energy-price-actions">
+          <button id="saveEnergyPriceBtn" class="secondary-btn" type="button">ΑΠΟΘΗΚΕΥΣΗ ΤΙΜΗΣ</button>
+          <span id="energyPriceStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
       <p class="privacy-note">Χρησιμοποίησε τον MQTT κωδικό του χρήστη, όχι τον κωδικό GitHub. Διατηρείται μόνο για την τρέχουσα καρτέλα, ώστε η επαναφόρτωση να μην απαιτεί νέα εισαγωγή.</p>
       <div id="connectionError" class="connection-error hidden" role="alert"></div>
 
@@ -331,8 +343,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.60"></script>
-  <script src="app.js?v=5.60"></script>
+  <script src="history.js?v=5.61"></script>
+  <script src="app.js?v=5.61"></script>
 </body>
 </html>
 
