@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.59";
+  const APP_VERSION = "5.60";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -1996,7 +1996,12 @@
   historyDialog.className = 'modal energy-history-dialog';
   historyDialog.innerHTML = `<div class="dialog-head"><h2>Ιστορικό ενέργειας</h2><button type="button" id="closeEnergyHistory">Κλείσιμο</button></div>
     <div class="history-controls"><select id="energyHistoryRange"><option value="48">Τελευταίες 48 ώρες · ανά ώρα</option><option value="30">Τελευταίες 30 ημέρες</option></select><button id="reloadEnergyHistory" type="button">Ανανέωση</button></div>
-    <p id="energyHistoryStatus"></p><div id="energyHistoryMemory"></div><div id="energyHistoryPlot" class="energy-history-plot"></div><div id="energyHistoryTable"></div>
+    <p id="energyHistoryStatus"></p><div id="energyHistoryMemory"></div><div id="energyHistoryPlot" class="energy-history-plot"></div>
+    <div class="history-table-actions">
+      <a id="energyHistoryTableToggle" href="#energyHistoryTable" aria-controls="energyHistoryTable" aria-expanded="false">Προβολή πίνακα τιμών</a>
+      <button id="exportEnergyHistoryCsv" type="button" disabled>Εξαγωγή CSV</button>
+    </div>
+    <div id="energyHistoryTable" hidden></div>
     <p class="history-note">Ισοζύγιο = εισαγωγή − εξαγωγή. Θετικό: ενέργεια από το δίκτυο. Αρνητικό: πλεόνασμα προς το δίκτυο. Δεν είναι η συνολική παραγωγή Φ/Β. ×: χωρίς καταγραφή. Αχνές μπάρες: τρέχουσα, μερική ή εκτιμώμενη περίοδος. Η καταγραφή ξεκινά με τη V5.00· τα παλιά δεδομένα δεν συμπληρώνονται.</p>`;
   document.body.appendChild(historyDialog);
   const historyStatus = () => $('energyHistoryStatus');
@@ -2018,6 +2023,10 @@
     const range=Number($('energyHistoryRange').value);
     historySession={id,range,rows:new Map(),meta:null,backfillAttempted:false};
     $('energyHistoryPlot').innerHTML=''; $('energyHistoryTable').innerHTML=''; $('energyHistoryMemory').textContent='';
+    $('energyHistoryTable').hidden=true;
+    $('energyHistoryTableToggle').textContent='Προβολή πίνακα τιμών';
+    $('energyHistoryTableToggle').setAttribute?.('aria-expanded','false');
+    $('exportEnergyHistoryCsv').disabled=true;
     historyStatus().textContent='Λήψη ιστορικού…'; requestHistoryPage();
   }
   function openEnergyHistory(id) {
@@ -2036,14 +2045,30 @@
     const groups=h.range===48
       ? EnergyHistory.hourly(rows,48,h.meta?.epoch)
       : EnergyHistory.daily(rows,30,today);
-    $('energyHistoryPlot').innerHTML=groups.length ? (dual ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">Σ = συνολικό block</span></p>' : '')+EnergyHistory.svg(groups,dual) : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
+    const legend=dual ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">Σ = συνολικό block</span></p>' : '';
+    // Two 24-hour charts: identical Y scale and X spacing, one shared
+    // horizontal scrollbar; the newest hourly slot is on the left in both.
+    const plot=h.range===48
+      ? '<div class="history-comparison">'+
+          '<section class="history-comparison-panel" aria-label="Πρόσφατες 24 ώρες"><h3>Πρόσφατες 24 ώρες</h3>'+
+          EnergyHistory.svg(groups.slice(0,24),dual,groups)+'</section>'+
+          '<section class="history-comparison-panel" aria-label="Προηγούμενες 24 ώρες"><h3>Προηγούμενες 24 ώρες</h3>'+
+          EnergyHistory.svg(groups.slice(24,48),dual,groups)+'</section></div>'
+      : EnergyHistory.svg(groups,dual);
+    $('energyHistoryPlot').innerHTML=groups.length ? legend+plot : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
     const names=dual?['Ζ1','Ζ2 πρωί','Ζ2 βράδυ','Σύνολο']:['Ζ'];
-    $('energyHistoryTable').innerHTML=`<div class="history-table-wrap"><table class="utility-history-table"><thead><tr><th>Περίοδος</th>${names.map(n=>`<th>${n} kWh</th>`).join('')}<th>Καταγραφή</th></tr></thead><tbody>${groups.map(g=>{
+    const columns=['Περίοδος',...names.map(n=>`${n} kWh`),'Καταγραφή'];
+    const tableRows=groups.map(g=>{
       const vs=g.values ? (dual ? g.values : [g.values.reduce((a,b)=>a+b,0)]) : null;
       const flags=g.flags; const status=flags&32?'Χωρίς δεδομένα':[(flags&16?'Τρέχουσα':''),(flags&1?'Μερική':''),(flags&2?'Εκτιμώμενη κατανομή':''),(flags&4?'Επαναφορά μετρητή':''),(flags&8?'Σφάλμα αποθήκευσης':'')].filter(Boolean).join(' · ')||'Καταγεγραμμένη';
       const displayValues=vs && dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
-      return `<tr><td title="${escapeHtml(g.detail)}">${escapeHtml(g.label)}</td>${names.map((_,i)=>`<td>${displayValues?EnergyHistory.number(displayValues[i]):'—'}</td>`).join('')}<td>${escapeHtml(status)}</td></tr>`;
-    }).join('')}</tbody></table></div>`;
+      return {label:g.label,detail:g.detail,values:names.map((_,i)=>displayValues?EnergyHistory.number(displayValues[i]):'—'),status};
+    });
+    $('energyHistoryTable').innerHTML=`<div class="history-table-wrap"><table class="utility-history-table"><thead><tr>${columns.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}</tr></thead><tbody>${tableRows.map(row=>
+      `<tr><td title="${escapeHtml(row.detail)}">${escapeHtml(row.label)}</td>${row.values.map(v=>`<td>${escapeHtml(v)}</td>`).join('')}<td>${escapeHtml(row.status)}</td></tr>`
+    ).join('')}</tbody></table></div>`;
+    h.csvRows=[columns,...tableRows.map(row=>[row.label,...row.values,row.status])];
+    $('exportEnergyHistoryCsv').disabled=!complete;
     if(complete) historyStatus().textContent=`${h.id} · ${h.range===48?'48 ώρες · ανά ώρα · νεότερη → παλαιότερη':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
     if(h.meta) $('energyHistoryMemory').textContent=`LittleFS: σύνολο ${h.meta.total} / χρησιμοποιημένα ${h.meta.used} / ελεύθερα ${h.meta.free} bytes. RAM με ενεργό MQTT: ${h.meta.heap} bytes, μεγαλύτερο μπλοκ ${h.meta.block}, ελάχιστη RAM σε αυτή την εκκίνηση ${h.meta.minHeap}. ${h.meta.failed?'Πρόβλημα αποθήκευσης ιστορικού.':''}`;
   }
@@ -2088,6 +2113,28 @@
   historyDialog.addEventListener('close',()=>{if(historySession)clearTimeout(historySession.timer); historySession=null;});
   $('energyHistoryRange').addEventListener('change',()=>{if(historySession)loadEnergyHistory(historySession.id);});
   $('reloadEnergyHistory').addEventListener('click',()=>{if(historySession)loadEnergyHistory(historySession.id);});
+  $('energyHistoryTableToggle').addEventListener('click',event=>{
+    event.preventDefault();
+    const table=$('energyHistoryTable'), show=table.hidden;
+    table.hidden=!show;
+    $('energyHistoryTableToggle').textContent=show?'Απόκρυψη πίνακα τιμών':'Προβολή πίνακα τιμών';
+    $('energyHistoryTableToggle').setAttribute('aria-expanded',String(show));
+  });
+  $('exportEnergyHistoryCsv').addEventListener('click',()=>{
+    const h=historySession;
+    if(!h?.csvRows?.length || $('exportEnergyHistoryCsv').disabled) return;
+    // UTF-8 BOM and semicolon columns for spreadsheet apps with Greek locale.
+    const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
+    const csv='\uFEFF'+h.csvRows.map(row=>row.map(quote).join(';')).join('\r\n')+'\r\n';
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='energy-history-'+h.id.replace(/[^a-zA-Z0-9_-]/g,'_')+(h.range===48?'-48h':'-30d')+'.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
 
   function handleCsv(id, text) {
     if (text.startsWith("BEGIN|UTILITY|")) {
@@ -2685,7 +2732,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.59", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.60", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
