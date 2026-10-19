@@ -77,6 +77,20 @@ assert.equal(full48[0].epoch-full48.at(-1).epoch,47*3600);
 const full48Svg=H.svg(full48,true);
 assert.equal((full48Svg.match(/ y="282" /g)||[]).length,24);
 assert(full48Svg.indexOf(full48[0].label)<full48Svg.indexOf(full48[2].label));
+// Comparison mode renders 24 hourly slots per row, 12 time ticks in each,
+// and uses a shared Y range even if one day consumes much more than the other.
+const comparison=full48.map((g,i)=>({...g,values:i<24?[1,0,0]:[5,0,0],flags:0}));
+const latestSvg=H.svg(comparison.slice(0,24),true,comparison);
+const earlierSvg=H.svg(comparison.slice(24,48),true,comparison);
+assert.equal((latestSvg.match(/ y="282" /g)||[]).length,12);
+assert.equal((earlierSvg.match(/ y="282" /g)||[]).length,12);
+assert.equal((latestSvg.match(/<rect /g)||[]).length,24);
+assert.equal((earlierSvg.match(/<rect /g)||[]).length,24);
+assert.equal(latestSvg.match(/viewBox="([^"]+)"/)[1],earlierSvg.match(/viewBox="([^"]+)"/)[1]);
+assert.equal(
+  [...latestSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join(''),
+  [...earlierSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join('')
+);
 const css=fs.readFileSync(resolve(root,'style.css'),'utf8');
 assert(css.includes('.legend-z1::before { background:#ff9800; }'));
 assert(css.includes('.legend-z2-day::before { background:#ffd600; }'));
@@ -122,6 +136,10 @@ assert($('energyHistoryPlot').innerHTML.includes('<svg'));
 assert($('energyHistoryTable').innerHTML.includes('Ζ2 πρωί'));
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert($('energyHistoryTable').innerHTML.includes('Χωρίς δεδομένα'));
+assert.equal($('energyHistoryTable').hidden,true,'History table stays hidden by default');
+assert.equal($('exportEnergyHistoryCsv').disabled,false);
+assert.equal(context.historySession.csvRows.length,31);
+assert.equal(context.historySession.csvRows[0][0],'Περίοδος');
 assert($('energyHistoryStatus').textContent.includes('30 ημέρες · νεότερη → παλαιότερη'));
 
 context.loadEnergyHistory('test');
@@ -142,6 +160,12 @@ feed(`P|${token}|${p0+1800}|1|1600|100`);
 feed(`P|${token}|${p0+3600}|1|2300|200`);
 feed(`E|${token}|-1|3`);
 assert($('energyHistoryStatus').textContent.includes('48 ώρες · ανά ώρα'));
+assert.equal(($('energyHistoryPlot').innerHTML.match(/<svg /g)||[]).length,2);
+assert($('energyHistoryPlot').innerHTML.includes('Πρόσφατες 24 ώρες'));
+assert($('energyHistoryPlot').innerHTML.includes('Προηγούμενες 24 ώρες'));
+assert.equal($('energyHistoryTable').hidden,true);
+assert.equal(context.historySession.csvRows.length,49);
+assert.equal(context.historySession.csvRows[0].length,6);
 assert.equal(context.historySession.rows.size,3);
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 
