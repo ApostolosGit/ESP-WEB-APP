@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.58";
+  const APP_VERSION = "5.59";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -2016,7 +2016,7 @@
   function loadEnergyHistory(id) {
     if(historySession) clearTimeout(historySession.timer);
     const range=Number($('energyHistoryRange').value);
-    historySession={id,range,rows:new Map(),meta:null};
+    historySession={id,range,rows:new Map(),meta:null,backfillAttempted:false};
     $('energyHistoryPlot').innerHTML=''; $('energyHistoryTable').innerHTML=''; $('energyHistoryMemory').textContent='';
     historyStatus().textContent='Λήψη ιστορικού…'; requestHistoryPage();
   }
@@ -2044,7 +2044,7 @@
       const displayValues=vs && dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
       return `<tr><td title="${escapeHtml(g.detail)}">${escapeHtml(g.label)}</td>${names.map((_,i)=>`<td>${displayValues?EnergyHistory.number(displayValues[i]):'—'}</td>`).join('')}<td>${escapeHtml(status)}</td></tr>`;
     }).join('')}</tbody></table></div>`;
-    if(complete) historyStatus().textContent=`${h.id} · ${h.range===48?'48 ώρες · ανά ώρα':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
+    if(complete) historyStatus().textContent=`${h.id} · ${h.range===48?'48 ώρες · ανά ώρα · νεότερη → παλαιότερη':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
     if(h.meta) $('energyHistoryMemory').textContent=`LittleFS: σύνολο ${h.meta.total} / χρησιμοποιημένα ${h.meta.used} / ελεύθερα ${h.meta.free} bytes. RAM με ενεργό MQTT: ${h.meta.heap} bytes, μεγαλύτερο μπλοκ ${h.meta.block}, ελάχιστη RAM σε αυτή την εκκίνηση ${h.meta.minHeap}. ${h.meta.failed?'Πρόβλημα αποθήκευσης ιστορικού.':''}`;
   }
   function handleEnergyHistory(id,text) {
@@ -2064,7 +2064,23 @@
     } else if(h.begun && p[0]==='E' && p.length===4) {
       clearTimeout(h.timer);
       if(+p[3]!==h.pageRows) { if(h.retry<2) requestHistoryPage(h.offset,h.retry+1); else {historyStatus().textContent='Ελλιπής μεταφορά ιστορικού. Πατήστε Ανανέωση.';renderEnergyHistory(false);} return; }
-      if(+p[2]>=0 && +p[2]>h.offset) requestHistoryPage(+p[2]);
+      const nextOffset=+p[2];
+      // The ESP8266 v5.58 history sender starts mode 0 at a 24-hour cutoff.
+      // Its first E packet reveals the checkpoint cursor (after 16 records);
+      // rewind by 56 half-hour checkpoints to retrieve the preceding 24 hours
+      // without modifying the device firmware or downloading 45 days of history.
+      // The second pass pages forward normally, and Map deduplicates overlap.
+      if(h.range===48 && !h.backfillAttempted && h.offset===0 &&
+         nextOffset>=0 && h.pageRows>0) {
+        h.backfillAttempted=true;
+        const firstRecentIndex=nextOffset-h.pageRows;
+        const rewindOffset=Math.max(1,firstRecentIndex-56);
+        if(rewindOffset<firstRecentIndex) {
+          requestHistoryPage(rewindOffset);
+          return;
+        }
+      }
+      if(nextOffset>=0 && nextOffset>h.offset) requestHistoryPage(nextOffset);
       else renderEnergyHistory();
     }
   }
