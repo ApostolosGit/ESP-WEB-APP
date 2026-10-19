@@ -91,6 +91,37 @@ assert.equal(
   [...latestSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join(''),
   [...earlierSvg.matchAll(/<text x="50"[^>]*>[^<]*<\/text>/g)].map(m=>m[0]).join('')
 );
+// In the hourly view, bar and 2-hour X-axis colors follow local Athens
+// tariff hours rather than the browser timezone, including summer/winter.
+const tariffCases=[
+  ['2026-01-15T08:00:00+02:00',0,'#ff9800'], // winter Z1
+  ['2026-01-15T13:00:00+02:00',1,'#ffd600'], // winter Z2 day
+  ['2026-01-15T03:00:00+02:00',2,'#000000'], // winter Z2 night
+  ['2026-07-15T08:00:00+03:00',0,'#ff9800'], // summer Z1
+  ['2026-07-15T12:00:00+03:00',1,'#ffd600'], // summer Z2 day
+  ['2026-07-15T03:00:00+03:00',2,'#000000']  // summer Z2 night
+];
+for(const [time,zone,color] of tariffCases) {
+  const epoch=Date.parse(time)/1000;
+  const group={epoch,label:'ώρες',values:[1,0,0],flags:0};
+  assert.equal(H.tariffZone(epoch+1800),zone);
+  const colored=H.svg([group],false);
+  assert(colored.includes(`fill="${color}" data-hour-zone="${zone}"`));
+  assert(colored.includes(`y="282" text-anchor="middle" fill="${color}"`));
+  // The dual-tariff graph continues to preserve real zone-segment colors.
+  const dualGroup={...group,values:[zone===0?1:0,zone===1?1:0,zone===2?1:0]};
+  assert(H.svg([dualGroup],true).includes(`fill="${color}" data-hour-zone="${zone}"`));
+}
+const anchorSummer=Date.parse('2026-07-15T14:00:00+03:00')/1000;
+const summerPoints=Array.from({length:97},(_,i)=>({
+  epoch:anchorSummer-48*3600+i*1800,generation:1,import:i*100,export:0
+}));
+const summer48=H.hourly(summerPoints,48,anchorSummer);
+for(const halfDay of [summer48.slice(0,24),summer48.slice(24,48)]) {
+  const chartHtml=H.svg(halfDay,true,summer48);
+  for(const color of ['#ff9800','#ffd600','#000000'])
+    assert(chartHtml.includes(`fill="${color}"`),`Missing zone ${color} in one 24h plot`);
+}
 const css=fs.readFileSync(resolve(root,'style.css'),'utf8');
 assert(css.includes('.legend-z1::before { background:#ff9800; }'));
 assert(css.includes('.legend-z2-day::before { background:#ffd600; }'));
