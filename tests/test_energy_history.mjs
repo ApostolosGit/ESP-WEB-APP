@@ -39,13 +39,14 @@ const points=[
 ];
 const hours=H.hourly(points,3,t0+4*half);
 assert.equal(hours.length,3);
-assert(Math.abs(hours[0].values[0]-2)<1e-9);
-assert.equal(hours[0].values[1],0);
+assert.equal(hours[0].values,null); // newest (current hour)
+assert(hours[0].flags&16);
+assert(hours[0].flags&32);
 assert(Math.abs(hours[1].values[1]-2)<1e-9);
 assert.equal(hours[1].values[0],0);
-assert.equal(hours[2].values,null);
-assert(hours[2].flags&16);
-assert(hours[2].flags&32);
+assert(Math.abs(hours[2].values[0]-2)<1e-9);
+assert.equal(hours[2].values[1],0);
+assert(hours[0].epoch > hours[1].epoch && hours[1].epoch > hours[2].epoch);
 
 let chart=H.svg([
   {label:'A',values:[2.125,-3.456,1],flags:0},
@@ -68,6 +69,18 @@ assert(mono.includes('>-1,331</text>'));
 assert.equal((H.svg([{label:'zero',values:[0,0,0],flags:0}],true).match(/<line /g)||[]).length,1);
 assert(!H.svg([{label:'<script>',values:[1],flags:0}],false).includes('<script>'));
 assert(!H.svg([],false).includes('NaN'));
+// A full 48-hour graph must render all 48 hourly slots, latest on the left,
+// and exactly one X-axis date/time label per two hours.
+const full48=H.hourly([],48,t0);
+assert.equal(full48.length,48);
+assert.equal(full48[0].epoch-full48.at(-1).epoch,47*3600);
+const full48Svg=H.svg(full48,true);
+assert.equal((full48Svg.match(/ y="282" /g)||[]).length,24);
+assert(full48Svg.indexOf(full48[0].label)<full48Svg.indexOf(full48[2].label));
+const css=fs.readFileSync(resolve(root,'style.css'),'utf8');
+assert(css.includes('.legend-z1::before { background:#ff9800; }'));
+assert(css.includes('.legend-z2-day::before { background:#ffd600; }'));
+assert(css.includes('.legend-z2-night::before { background:#000000; }'));
 
 const code=fs.readFileSync(resolve(root,'app.js'),'utf8');
 const start=code.indexOf('  const historyStatus =');
@@ -135,6 +148,33 @@ assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert(!code.includes('<option value="7">'));
 assert(code.includes('<option value="48">Τελευταίες 48 ώρες · ανά ώρα</option>'));
 assert(code.includes('`${BASE}/+/admin/history`'));
-assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.57'));
+assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.59'));
 assert(fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('history.js')<fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('app.js'));
-console.log('App V5.57 charts: 48 hourly, stacked tariff zones, newest-first 30 days, MQTT paging and PWA precache PASS');
+// The firmware sends the first 16 checkpoints with a 24h cutoff, then E
+// exposes the checkpoint cursor. The APP must rewind and fetch older records.
+$('energyHistoryRange').value='48';
+context.loadEnergyHistory('test');
+token=packets.at(-1).split('|')[1];
+const anchor=p0+3600;
+feed(`B|${token}|0|${anchor-40*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+for(let i=0;i<16;i++) {
+  const epoch=anchor-23*3600+i*1800;
+  feed(`P|${token}|${epoch}|1|${(i+1)*1000}|0`);
+}
+feed(`E|${token}|1016|16`);
+assert.equal(context.historySession.backfillAttempted,true);
+assert.equal(context.historySession.offset,944); // 1016 - 16 - 56
+assert.equal(packets.at(-1).split('|').at(-1),'944');
+token=packets.at(-1).split('|')[1];
+feed(`B|${token}|0|${anchor-40*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+feed(`P|${token}|${anchor-44*3600}|1|0|0`);
+feed(`P|${token}|${anchor-44*3600+1800}|1|500|0`);
+feed(`E|${token}|-1|2`);
+assert.equal(context.historySession.rows.size,18);
+assert($('energyHistoryStatus').textContent.includes('νεότερη → παλαιότερη'));
+assert($('energyHistoryTable').innerHTML.includes('0,5'));
+const chrono=H.hourly([...context.historySession.rows.values()],48,anchor);
+assert(chrono[0].epoch>chrono.at(-1).epoch);
+assert(chrono.some(g=>g.values && g.epoch<=anchor-43*3600));
+// Prior GitHub CI had an outdated v5.57 assertion; v5.59 is now consistent.
+console.log('APP v5.59: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');
