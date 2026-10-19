@@ -102,6 +102,13 @@ const server=http.createServer((req,res)=>{
    width:svg.getBoundingClientRect().width,
    axis:[...svg.querySelectorAll('text[x="50"]')].map(t=>t.textContent)
  })));
+ // The full 48-hour fixture covers all three Greek time-of-day zones in
+ // each row, not merely in the legend.
+ const hourColors=await page.locator('.history-comparison-panel svg').evaluateAll(svgs=>svgs.map(svg=>[
+  ...new Set([...svg.querySelectorAll('rect')].map(rect=>rect.getAttribute('fill')))
+ ]));
+ for(const palette of hourColors) for(const color of ['#ff9800','#ffd600','#000000'])
+  assert(palette.includes(color),'Missing time-of-day bar color '+color);
  assert.equal(aligned[0].viewBox,aligned[1].viewBox);
  assert.deepEqual(aligned[0].axis,aligned[1].axis);
  assert(Math.abs(aligned[0].left-aligned[1].left)<1,'24-hour comparisons must align on X');
