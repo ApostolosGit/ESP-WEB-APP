@@ -2045,7 +2045,7 @@
     const groups=h.range===48
       ? EnergyHistory.hourly(rows,48,h.meta?.epoch)
       : EnergyHistory.daily(rows,30,today);
-    const legend=dual ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">Σ = συνολικό block</span></p>' : '';
+    const legend=dual || h.range===48 ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">'+(dual?'Σ = συνολικό block':'Χρώμα ανά ώρα (δεν αλλάζει το μονοζωνικό τιμολόγιο)')+'</span></p>' : '';
     // Two 24-hour charts: identical Y scale and X spacing, one shared
     // horizontal scrollbar; the newest hourly slot is on the left in both.
     const plot=h.range===48
