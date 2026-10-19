@@ -131,12 +131,13 @@ window.EnergyHistory = (() => {
       if (bucket.epoch === lastHour) bucket.flags |= 16;
       const end = bucket.epoch + HOUR;
       return {
+        epoch:bucket.epoch,
         label:hourLabel(bucket.epoch),
         values:bucket.has ? bucket.values : null,
         flags:bucket.flags,
         detail:`${local(bucket.epoch)} → ${local(end)} · ${Math.round(bucket.covered/60)} λεπτά καταγραφής`
       };
-    });
+    }).reverse(); // Newest hour first, matching the chart and table order.
   }
 
   function svg(groups, dual) {
@@ -214,7 +215,10 @@ window.EnergyHistory = (() => {
         out += `<text class="bar-value" x="${center}" y="${labelY}" text-anchor="middle" fill="#263d4b" font-size="10" font-weight="700">Σ ${number(data.total)}</text>`;
       }
 
-      const showLabel = groups.length <= 30 || i % 4 === 0 || i === groups.length - 1;
+      // Show hourly X labels every two bars; the 30-day chart keeps daily labels.
+      const showLabel = Number.isFinite(group.epoch)
+        ? i % 2 === 0
+        : (groups.length <= 30 || i % 4 === 0 || i === groups.length - 1);
       if (showLabel) {
         out += `<text x="${center}" y="282" text-anchor="middle" fill="#526576" font-size="10">${xml(group.label)}</text>`;
       }
