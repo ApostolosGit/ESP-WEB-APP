@@ -236,7 +236,7 @@
   function parseEnergyPrice(raw) {
     const value = String(raw ?? "").trim();
     if (!value) return null;
-    if (!/^\\d{1,3}(?:[.,]\\d{1,4})?$/.test(value)) return undefined;
+    if (!/^\d{1,3}(?:[.,]\d{1,4})?$/.test(value)) return undefined;
     const parsed = Number(value.replace(",", "."));
     return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
       ? parsed : undefined;
