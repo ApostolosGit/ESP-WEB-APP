@@ -31,6 +31,7 @@ const ctx=vm.createContext({Intl,Number,String,Math,localStorage,ui,renderAll:()
 const declarations=[
   'const ENERGY_PRICE_KEY="energy.pricePerKwh";',
   'const DEFAULT_ENERGY_PRICE=0.25;',
+  'const DEFAULTS={host:"",port:"8884",path:"/mqtt"};',
   'let energyPricePerKwh=DEFAULT_ENERGY_PRICE;'
 ].join('\n');
 vm.runInContext(declarations+'\n'+funcs,ctx);
