@@ -1359,9 +1359,9 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
   border-radius:3px;
   vertical-align:-1px;
 }
-.legend-z1::before { background:#548ae8; }
-.legend-z2-day::before { background:#16a58a; }
-.legend-z2-night::before { background:#9066d8; }
+.legend-z1::before { background:#ff9800; }
+.legend-z2-day::before { background:#ffd600; }
+.legend-z2-night::before { background:#000000; }
 .legend-total { color:#263d4b; }
 #energyHistoryMemory { font-size:.8rem; line-height:1.5; margin:12px 0; }
 .device-actions { flex-wrap:wrap; }
