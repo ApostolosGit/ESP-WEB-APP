@@ -15,7 +15,8 @@ const server=http.createServer((req,res)=>{
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
- const page=await browser.newPage({viewport:{width:1280,height:850}});
+ const context=await browser.newContext({viewport:{width:1280,height:850}});
+ const page=await context.newPage();
  await page.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
  await page.goto(`http://127.0.0.1:${server.address().port}/`);
  await page.locator('#settingsDialog').waitFor({state:'visible'});
