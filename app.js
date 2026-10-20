@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.62";
+  const APP_VERSION = "5.63";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -2080,7 +2080,7 @@
     if(previous) clearTimeout(previous.timer);
     const range=Number($('energyHistoryRange').value);
     const preserve=previous?.id===id && previous.range===range && (previous.hasRendered || previous.preservedPlot);
-    historySession={id,range,rows:new Map(),meta:null,backfillAttempted:false,
+    historySession={id,range,rows:new Map(),meta:null,firstRecentIndex:null,phase:range===48?'recent':'daily',olderStarted:false,
       hasRendered:false,preservedPlot:Boolean(preserve),complete:false,loading:true,groups:null,tableData:null,csvRows:null};
     if(!preserve) {
       $('energyHistoryPlot').innerHTML='';
@@ -2095,7 +2095,9 @@
     historyStatus().textContent=preserve
       ? 'Ανανέωση ιστορικού… Εμφανίζεται το προηγούμενο γράφημα μέχρι να ληφθούν νέα δεδομένα.'
       : 'Λήψη ιστορικού…';
-    requestHistoryPage();
+    // Daily offsets are calendar slots, so the newest 16 days are known
+    // without a discovery request. Raw checkpoint offsets need discovery.
+    requestHistoryPage(range===30?14:0);
   }
   function openEnergyHistory(id) {
     const device=devices.get(id);
@@ -2113,6 +2115,11 @@
     const groups=h.range===48
       ? EnergyHistory.hourly(rows,48,h.meta?.epoch)
       : EnergyHistory.daily(rows,30,today);
+    if(!complete) groups.forEach((group,i)=>{
+      if(!group.values || (h.range===48 && i>=24 && !h.olderStarted)) {
+        group.values=null; group.pending=true; group.detail='Αναμονή λήψης δεδομένων';
+      }
+    });
     const legend=dual || h.range===48 ? '<p class="history-legend"><span class="legend-zone legend-z1">Ζ1</span><span class="legend-zone legend-z2-day">Ζ2 πρωί</span><span class="legend-zone legend-z2-night">Ζ2 βράδυ</span><span class="legend-total">'+(dual?'Σ = συνολικό block':'Χρώμα ανά ώρα (δεν αλλάζει το μονοζωνικό τιμολόγιο)')+'</span></p>' : '';
     // Two 24-hour charts: identical Y scale and X spacing, one shared
     // horizontal scrollbar; the newest hourly slot is on the left in both.
@@ -2144,7 +2151,7 @@
     const columns=['Περίοδος',...names.map(n=>`${n} kWh`),'Καταγραφή'];
     const tableRows=h.groups.map(g=>{
       const vs=g.values ? (h.dual ? g.values : [g.values.reduce((a,b)=>a+b,0)]) : null;
-      const flags=g.flags; const status=flags&32?'Χωρίς δεδομένα':[(flags&16?'Τρέχουσα':''),(flags&1?'Μερική':''),(flags&2?'Εκτιμώμενη κατανομή':''),(flags&4?'Επαναφορά μετρητή':''),(flags&8?'Σφάλμα αποθήκευσης':'')].filter(Boolean).join(' · ')||'Καταγεγραμμένη';
+      const flags=g.flags; const status=g.pending?'Αναμονή δεδομένων':flags&32?'Χωρίς δεδομένα':[(flags&16?'Τρέχουσα':''),(flags&1?'Μερική':''),(flags&2?'Εκτιμώμενη κατανομή':''),(flags&4?'Επαναφορά μετρητή':''),(flags&8?'Σφάλμα αποθήκευσης':'')].filter(Boolean).join(' · ')||'Καταγεγραμμένη';
       const displayValues=vs && h.dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
       return {label:g.label,detail:g.detail,values:names.map((_,i)=>displayValues?EnergyHistory.number(displayValues[i]):'—'),status};
     });
@@ -2188,24 +2195,41 @@
       for(const [key,row] of h.pageData) h.rows.set(key,row);
       h.begun=false;
       const nextOffset=+p[2];
-      // The ESP8266 v5.58 history sender starts mode 0 at a 24-hour cutoff.
-      // Its first E packet reveals the checkpoint cursor (after 16 records);
-      // rewind by 56 half-hour checkpoints to retrieve the preceding 24 hours
-      // without modifying the device firmware or downloading 45 days of history.
-      // The second pass pages forward normally, and Map deduplicates overlap.
-      if(h.range===48 && !h.backfillAttempted && h.offset===0 &&
-         nextOffset>=0 && h.pageRows>0) {
-        h.backfillAttempted=true;
-        const firstRecentIndex=nextOffset-h.pageRows;
-        const rewindOffset=Math.max(1,firstRecentIndex-56);
-        if(rewindOffset<firstRecentIndex) {
+      if(h.range===30) {
+        if(h.offset===14) {
           renderEnergyHistory(false);
-          requestHistoryPage(rewindOffset);
+          requestHistoryPage(0);
+        } else renderEnergyHistory();
+        return;
+      }
+      // The legacy sender walks each page oldest-first. Finish the recent
+      // day before revealing it, so the first visible columns start on the
+      // left of the upper chart. Only then fetch older pages backwards.
+      if(h.phase==='recent') {
+        if(h.offset===0 && nextOffset>=0 && h.pageRows>0)
+          h.firstRecentIndex=Math.max(0,nextOffset-h.pageRows);
+        if(nextOffset>=0 && nextOffset>h.offset) {
+          if(!h.preservedPlot) historyStatus().textContent='Λήψη πρόσφατου 24ώρου… Πρώτα εμφανίζονται οι νεότερες ώρες.';
+          requestHistoryPage(nextOffset);
+          return;
+        }
+        h.phase='older';
+        if(h.firstRecentIndex>1) {
+          renderEnergyHistory(false);
+          requestHistoryPage(Math.max(1,h.firstRecentIndex-16));
+          return;
+        }
+      } else {
+        h.olderStarted=true;
+        const firstHour=Math.floor(h.meta.epoch/3600)*3600-47*3600;
+        const oldestEpoch=Math.min(...[...h.rows.values()].map(row=>row.epoch));
+        if(h.offset>1 && oldestEpoch>firstHour) {
+          renderEnergyHistory(false);
+          requestHistoryPage(Math.max(1,h.offset-16));
           return;
         }
       }
-      if(nextOffset>=0 && nextOffset>h.offset) { renderEnergyHistory(false); requestHistoryPage(nextOffset); }
-      else renderEnergyHistory();
+      renderEnergyHistory();
     }
   }
   $('closeEnergyHistory').addEventListener('click',()=>historyDialog.close());
@@ -2846,7 +2870,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.62", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.63", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
