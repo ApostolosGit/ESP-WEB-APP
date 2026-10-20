@@ -13,7 +13,7 @@ function extract(name) {
 const funcs=[
   'escapeHtml','formatNumber','parseEnergyPrice','estimatedCostText',
   'saveEnergyPrice','tariffRow','utilityReferenceDateShort','diffTone',
-  'renderTariffEnergy','restoreSettings'
+  'renderTariffEnergy','readLocalSetting','restoreSettings'
 ].map(extract).join('\n');
 const store=new Map();
 const localStorage={
@@ -82,3 +82,4 @@ assert(source.includes('tariffRow("Διαφορά", zDiff'));
 assert(source.includes('tariffRow("Διαφορά", z1Diff'));
 assert(source.includes('tariffRow("Διαφορά", z2Diff'));
 console.log('APP €/kWh default, comma/dot, persistence, validation, dual/mono difference and compact euro PASS');
+

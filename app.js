@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.63";
+  const APP_VERSION = "5.64";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -31,6 +31,7 @@
   const adminBusy = new Set();
 
   let client = null;
+  let successfulMqttSettings = null;
   let autoRefreshTimer = null;
   let toastTimeout = null;
   let deferredInstallPrompt = null;
@@ -76,6 +77,8 @@
     pathInput: $("pathInput"),
     usernameInput: $("usernameInput"),
     passwordInput: $("passwordInput"),
+    rememberConnectionInput: $("rememberConnectionInput"),
+    rememberConnectionStatus: $("rememberConnectionStatus"),
     energyPriceInput: $("energyPriceInput"),
     saveEnergyPriceBtn: $("saveEnergyPriceBtn"),
     energyPriceStatus: $("energyPriceStatus"),
@@ -2369,10 +2372,20 @@
   }
 
   const MQTT_SESSION_KEY = "energy.mqtt.tab-session";
+  const MQTT_REMEMBER_KEY = "energy.mqtt.remembered";
+  function readMqttConnection(storage, key) {
+    const saved = JSON.parse(storage.getItem(key) || "null");
+    const keys = ["host","port","path","username","password"];
+    if (!saved || !keys.every(name => typeof saved[name] === "string" && saved[name].length > 0)) return null;
+    return {...Object.fromEntries(keys.map(name => [name,saved[name]])),remember:saved.remember === true};
+  }
   function readMqttSession() {
+    try { return readMqttConnection(sessionStorage, MQTT_SESSION_KEY); } catch (_) { return null; }
+  }
+  function readRememberedMqtt() {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(MQTT_SESSION_KEY) || "null");
-      return saved && ["host","port","path","username","password"].every(key => typeof saved[key] === "string" && saved[key].length > 0) ? saved : null;
+      const saved = readMqttConnection(localStorage, MQTT_REMEMBER_KEY);
+      return saved ? {...saved,remember:true} : null;
     } catch (_) { return null; }
   }
   function writeMqttSession(settings) {
@@ -2381,14 +2394,49 @@
   function clearMqttSession() {
     try { sessionStorage.removeItem(MQTT_SESSION_KEY); } catch (_) {}
   }
+  function clearRememberedMqtt() {
+    try { localStorage.removeItem(MQTT_REMEMBER_KEY); return true; }
+    catch (_) {
+      ui.rememberConnectionStatus.textContent = "Η συσκευή δεν επέτρεψε τη διαγραφή των αποθηκευμένων στοιχείων.";
+      return false;
+    }
+  }
+  function saveRememberedMqtt(settings) {
+    // A tab-only reconnect must not erase another tab's remembered login.
+    if (!settings.remember) return;
+    try {
+      localStorage.setItem(MQTT_REMEMBER_KEY, JSON.stringify(settings));
+      ui.rememberConnectionStatus.textContent = "Η αυτόματη σύνδεση ενεργοποιήθηκε σε αυτή τη συσκευή.";
+    } catch (_) {
+      ui.rememberConnectionStatus.textContent = "Η σύνδεση έγινε, αλλά η συσκευή δεν επέτρεψε αποθήκευση των στοιχείων.";
+    }
+  }
+  function updateRememberConnection() {
+    const remember = ui.rememberConnectionInput.checked;
+    const removed = remember || clearRememberedMqtt();
+    if (successfulMqttSettings && client?.connected) {
+      successfulMqttSettings = {...successfulMqttSettings,remember};
+      writeMqttSession(successfulMqttSettings);
+      saveRememberedMqtt(successfulMqttSettings);
+    } else if (remember) {
+      ui.rememberConnectionStatus.textContent = "Τα στοιχεία θα αποθηκευτούν μετά από επιτυχημένη σύνδεση.";
+    } else {
+      const saved = readMqttSession();
+      if (saved) writeMqttSession({...saved,remember:false});
+    }
+    if (!remember && removed) ui.rememberConnectionStatus.textContent = "Η αυτόματη σύνδεση σε νέο άνοιγμα είναι απενεργοποιημένη.";
+  }
+  function readLocalSetting(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
 
   function restoreSettings() {
-    ui.hostInput.value = localStorage.getItem("energy.host") || ui.hostInput.value || DEFAULTS.host;
-    ui.portInput.value = localStorage.getItem("energy.port") || DEFAULTS.port;
-    ui.pathInput.value = localStorage.getItem("energy.path") || DEFAULTS.path;
-    ui.usernameInput.value = localStorage.getItem("energy.username") || "";
+    ui.hostInput.value = readLocalSetting("energy.host") || ui.hostInput.value || DEFAULTS.host;
+    ui.portInput.value = readLocalSetting("energy.port") || DEFAULTS.port;
+    ui.pathInput.value = readLocalSetting("energy.path") || DEFAULTS.path;
+    ui.usernameInput.value = readLocalSetting("energy.username") || "";
     ui.passwordInput.value = "";
-    const storedPrice = localStorage.getItem(ENERGY_PRICE_KEY);
+    const storedPrice = readLocalSetting(ENERGY_PRICE_KEY);
     if (storedPrice !== null) {
       const parsed = parseEnergyPrice(storedPrice);
       if (parsed !== undefined) energyPricePerKwh = parsed;
@@ -2398,14 +2446,22 @@
   }
 
   function saveNonSecretSettings(settings) {
-    localStorage.setItem("energy.host", settings.host);
-    localStorage.setItem("energy.port", settings.port);
-    localStorage.setItem("energy.path", settings.path);
-    localStorage.setItem("energy.username", settings.username);
+    try {
+      localStorage.setItem("energy.host", settings.host);
+      localStorage.setItem("energy.port", settings.port);
+      localStorage.setItem("energy.path", settings.path);
+      localStorage.setItem("energy.username", settings.username);
+    } catch (_) { /* Broker connections can still work without local storage. */ }
   }
 
   function disconnect(showMessage = true) {
-    if (showMessage) clearMqttSession();
+    if (showMessage) {
+      clearMqttSession();
+      if (clearRememberedMqtt()) ui.rememberConnectionStatus.textContent = "Ο αποθηκευμένος MQTT κωδικός διαγράφηκε.";
+      ui.rememberConnectionInput.checked = false;
+      ui.passwordInput.value = "";
+    }
+    successfulMqttSettings = null;
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
     if (client) {
@@ -2425,6 +2481,9 @@
       return;
     }
 
+    settings = {...settings,remember:typeof settings.remember === "boolean"
+      ? settings.remember : ui.rememberConnectionInput.checked};
+    ui.rememberConnectionInput.checked = settings.remember;
     disconnect(false);
     showConnectionError();
     saveNonSecretSettings(settings);
@@ -2449,7 +2508,9 @@
 
     newClient.on("connect", () => {
       if (client !== newClient) return;
-      writeMqttSession(settings);
+      successfulMqttSettings = {...settings,remember:ui.rememberConnectionInput.checked};
+      writeMqttSession(successfulMqttSettings);
+      saveRememberedMqtt(successfulMqttSettings);
       setBrokerState("good", "Συνδεδεμένο");
       showConnectionError();
 
@@ -2488,6 +2549,10 @@
       showConnectionError(`MQTT: ${err.message || err}`);
       if (/not authorized|bad user|bad username|bad password/i.test(String(err.message || err))) {
         clearMqttSession();
+        if (clearRememberedMqtt()) ui.rememberConnectionStatus.textContent = "Η αυτόματη σύνδεση απενεργοποιήθηκε. Έλεγξε τα στοιχεία σύνδεσης.";
+        successfulMqttSettings = null;
+        ui.rememberConnectionInput.checked = false;
+        ui.passwordInput.value = "";
         newClient.end(true); // A rejected login needs corrected credentials, not endless retries.
         if (!ui.settingsDialog.open) ui.settingsDialog.showModal();
       }
@@ -2601,6 +2666,19 @@
   });
   ui.closeSettingsBtn.addEventListener("click", () => ui.settingsDialog.close());
   ui.disconnectBtn.addEventListener("click", () => disconnect(true));
+  ui.rememberConnectionInput.addEventListener("change", updateRememberConnection);
+  window.addEventListener("storage", (event) => {
+    if ((event.key === MQTT_REMEMBER_KEY || event.key === null) && event.newValue === null) {
+      // Another tab forgot this device; it must not be re-saved on reconnect.
+      ui.rememberConnectionInput.checked = false;
+      const saved = successfulMqttSettings || readMqttSession();
+      if (saved) {
+        successfulMqttSettings = {...saved,remember:false};
+        writeMqttSession(successfulMqttSettings);
+      }
+      ui.rememberConnectionStatus.textContent = "Η αυτόματη σύνδεση απενεργοποιήθηκε από άλλη καρτέλα.";
+    }
+  });
 
   ui.saveEnergyPriceBtn.addEventListener("click", saveEnergyPrice);
   ui.energyPriceInput.addEventListener("input", () => {
@@ -2609,13 +2687,15 @@
 
   ui.settingsForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!saveEnergyPrice()) return;
+    // An unavailable local preference store must not block MQTT login.
+    if (!saveEnergyPrice() && parseEnergyPrice(ui.energyPriceInput.value) === undefined) return;
     connect({
       host: ui.hostInput.value.trim(),
       port: ui.portInput.value.trim(),
       path: ui.pathInput.value.trim() || "/mqtt",
       username: ui.usernameInput.value.trim(),
-      password: ui.passwordInput.value
+      password: ui.passwordInput.value,
+      remember: ui.rememberConnectionInput.checked
     });
   });
 
@@ -2870,7 +2950,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.63", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.64", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
@@ -2901,14 +2981,16 @@
   restoreSettings();
   renderAll();
   setBrokerState("warn", "Αποσυνδεδεμένο");
-  const resumedMqttSession = readMqttSession();
+  const resumedMqttSession = readMqttSession() || readRememberedMqtt();
   if (resumedMqttSession) {
     ui.hostInput.value = resumedMqttSession.host;
     ui.portInput.value = resumedMqttSession.port;
     ui.pathInput.value = resumedMqttSession.path;
     ui.usernameInput.value = resumedMqttSession.username;
     ui.passwordInput.value = resumedMqttSession.password;
-    // Reconnect with the successful tab-bound values, not browser autofill.
+    ui.rememberConnectionInput.checked = resumedMqttSession.remember;
+    // Resume only previously successful app settings; password-manager
+    // autofill is left to the browser and never read without a form submit.
     connect(resumedMqttSession);
   } else setTimeout(() => ui.settingsDialog.showModal(), 250);
 })();

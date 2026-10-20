@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.63">
+  <link rel="stylesheet" href="style.css?v=5.64">
 </head>
 <body>
   <div class="app-shell">
@@ -56,7 +56,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.63</span>
+      <span>MQTT.app. v5.64</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -97,6 +97,13 @@
         <input id="passwordInput" name="mqtt_password" type="password" autocomplete="section-mqtt current-password" required placeholder="HiveMQ password">
       </label>
 
+      <label class="remember-connection">
+        <input id="rememberConnectionInput" type="checkbox" aria-describedby="rememberConnectionHelp">
+        <span>Να με θυμάσαι σε αυτή τη συσκευή · αυτόματη σύνδεση</span>
+      </label>
+      <p id="rememberConnectionHelp" class="privacy-note">Αποθηκεύει το username και τον MQTT κωδικό στον browser αυτής της συσκευής. Η Αποσύνδεση διαγράφει τον αποθηκευμένο κωδικό και καταργεί την αυτόματη σύνδεση.</p>
+      <p id="rememberConnectionStatus" class="privacy-note" role="status" aria-live="polite"></p>
+
       <section class="energy-price-settings" aria-labelledby="energyPriceTitle">
         <h3 id="energyPriceTitle">Κόστος ενέργειας</h3>
         <label for="energyPriceInput">Τιμή ενέργειας (€/kWh)
@@ -109,7 +116,7 @@
           <span id="energyPriceStatus" role="status" aria-live="polite"></span>
         </div>
       </section>
-      <p class="privacy-note">Χρησιμοποίησε τον MQTT κωδικό του χρήστη, όχι τον κωδικό GitHub. Διατηρείται μόνο για την τρέχουσα καρτέλα, ώστε η επαναφόρτωση να μην απαιτεί νέα εισαγωγή.</p>
+      <p class="privacy-note">Χρησιμοποίησε τον MQTT κωδικό του χρήστη, όχι τον κωδικό GitHub. Χωρίς «Να με θυμάσαι», ο κωδικός διατηρείται μόνο για την τρέχουσα καρτέλα.</p>
       <div id="connectionError" class="connection-error hidden" role="alert"></div>
 
       <div class="dialog-actions">
@@ -343,8 +350,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.63"></script>
-  <script src="app.js?v=5.63"></script>
+  <script src="history.js?v=5.64"></script>
+  <script src="app.js?v=5.64"></script>
 </body>
 </html>
 

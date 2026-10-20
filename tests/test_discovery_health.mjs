@@ -5,24 +5,24 @@ const root=new URL('../',import.meta.url);
 const source=fs.readFileSync(new URL('app.js',root),'utf8');
 const html=fs.readFileSync(new URL('index.html',root),'utf8');
 const savedSession=new Map();
-function boot(session=savedSession){
+function boot(session=savedSession,local=new Map(),blocked=false){
  const dom=new Map(),timers=new Map(),intervals=new Map(),swHandlers=new Map(),windowHandlers=new Map(),clients=[];let seq=0,reloads=0,now=Date.now();
  class ClockDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
  function node(){return {value:'',innerHTML:'',textContent:'',open:false,disabled:false,checked:false,dataset:{},handlers:new Map(),classList:{add(){},remove(){},toggle(){}},addEventListener(e,f){this.handlers.set(e,f);},insertAdjacentElement(_p,c){addIds(c.innerHTML);},showModal(){this.open=true;},close(){this.open=false;this.handlers.get('close')?.();},focus(){},reset(){},setAttribute(){}};}
  function addIds(markup){for(const m of markup.matchAll(/\bid="([^"]+)"/g)){if(!dom.has(m[1]))dom.set(m[1],node());}}
- addIds(html);const footer=[node(),node()],local=new Map();
+ addIds(html);const footer=[node(),node()];
  const ctx={console:{error(){},warn(){},log(){}},Date:ClockDate,Intl,Map,Set,Math,Number,JSON,URL,Promise,
   document:{body:{appendChild:c=>addIds(c.innerHTML)},getElementById:id=>dom.get(id)||null,createElement:()=>node(),querySelectorAll:()=>footer,addEventListener(){},visibilityState:'visible'},
   window:{addEventListener:(e,f)=>windowHandlers.set(e,f),location:{reload(){++reloads;}},confirm:()=>true},
   navigator:{serviceWorker:{controller:{},addEventListener:(e,f)=>swHandlers.set(e,f),register:async()=>({update:async()=>{}})}},
-  localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,v)},
+  localStorage:{getItem:k=>{if(blocked)throw Error('Storage blocked');return local.get(k)||null;},setItem:(k,v)=>{if(blocked)throw Error('Storage blocked');local.set(k,v);},removeItem:k=>{if(blocked)throw Error('Storage blocked');local.delete(k);}},
   sessionStorage:{getItem:k=>session.get(k)||null,setItem:(k,v)=>session.set(k,v),removeItem:k=>session.delete(k)},
   setTimeout:(f,ms)=>{timers.set(++seq,{f,ms});return seq;},clearTimeout:id=>timers.delete(id),setInterval:(f,ms)=>{intervals.set(++seq,{f,ms});return seq;},clearInterval:id=>intervals.delete(id),
   mqtt:{connect(url,settings){const handlers=new Map();const c={url,settings,connected:false,published:[],subscribe(_t,_o,cb){cb(null,[{qos:0},{qos:128}]);},on:(e,f)=>handlers.set(e,f),emit(e,...args){if(e==='connect')c.connected=true;handlers.get(e)?.(...args);},publish(t,p,o,cb){if(c.throwId&&t.includes('/'+c.throwId+'/'))throw new Error('one device publish failed');c.published.push({t,p});cb?.(null);},end(){c.connected=false;handlers.get('close')?.();}};clients.push(c);return c;}}
  };
  vm.createContext(ctx);
  vm.runInContext(source.replace(/\}\)\(\);\s*$/, 'globalThis.testApp={devices,connect,disconnect,renderAll,requestAll,requestUpdate,readMqttSession,setOtaSession:v=>otaSession=v};})();'),ctx);
- return {ctx,dom,timers,intervals,swHandlers,clients,app:ctx.testApp,
+ return {ctx,dom,timers,intervals,swHandlers,windowHandlers,clients,local,app:ctx.testApp,
    advance(ms){now+=ms;},fire(id){const timer=timers.get(id);assert(timer,`Missing timer ${id}`);timers.delete(id);timer.f();},get reloads(){return reloads;}};
 }
 let b=boot();const settings={host:'broker.example',port:'8884',path:'/mqtt',username:'esp-meter',password:'test-only-secret'};
@@ -136,3 +136,82 @@ frame(live,'state',{meter:'JSY-MK-333',firmware:'5.56',power_total:254});
 assert.equal(probeBoot.dom.get('metersStatus').textContent,'1');
 probeBoot.app.disconnect(false);orphan();assert.equal(probeBoot.app.devices.size,0);
 console.log('Retained ghost + MAC ID, live legacy site, cached snapshots, retry, heartbeat vs fresh sample, real failures, reconnect and orphan timers PASS');
+
+// Remember-device is explicit and persists only a successful MQTT login.
+const rememberKey='energy.mqtt.remembered',tabKey='energy.mqtt.tab-session';
+const deviceStore=new Map(),firstTab=new Map();
+const rememberBoot=boot(firstTab,deviceStore);
+rememberBoot.app.connect({...settings,remember:false});
+rememberBoot.clients.at(-1).emit('connect');
+assert(!deviceStore.has(rememberKey),'Default login must not persist its password');
+assert.equal(boot(new Map(),deviceStore).clients.length,0,'A new tab needs login when remembering is off');
+rememberBoot.app.connect({...settings,remember:true});
+assert(!deviceStore.has(rememberKey),'Do not save unverified credentials');
+rememberBoot.clients.at(-1).emit('connect');
+assert.equal(JSON.parse(deviceStore.get(rememberKey)).password,settings.password);
+const temporaryTab=boot(new Map(),new Map());
+temporaryTab.app.connect({...settings,remember:false});temporaryTab.clients[0].emit('connect');
+// Simulate the remembered login appearing in another window after this one.
+temporaryTab.local.set(rememberKey,deviceStore.get(rememberKey));
+temporaryTab.clients[0].emit('connect');
+assert(temporaryTab.local.has(rememberKey),'A tab-only reconnect must not erase another window\'s saved login');
+const newSession=new Map(),newTab=boot(newSession,deviceStore);
+assert.equal(newTab.clients.length,1,'A fresh tab reuses this device\'s saved connection');
+assert.equal(newTab.clients[0].settings.password,settings.password);
+assert.equal(newTab.dom.get('rememberConnectionInput').checked,true);
+assert.equal(newTab.dom.get('settingsDialog').open,false);
+assert.equal(newSession.size,0,'A fresh tab starts without an existing tab session');
+newTab.clients[0].emit('connect');
+assert.equal(JSON.parse(newSession.get(tabKey)).remember,true);
+
+// Opting out deletes the durable secret but preserves this active tab.
+newTab.dom.get('rememberConnectionInput').checked=false;
+newTab.dom.get('rememberConnectionInput').handlers.get('change')();
+assert(!deviceStore.has(rememberKey));
+assert.equal(newTab.clients[0].connected,true);
+assert.equal(JSON.parse(newSession.get(tabKey)).remember,false);
+assert.equal(boot(new Map(),deviceStore).clients.length,0);
+newTab.dom.get('usernameInput').value='unsent-edited-name';
+newTab.dom.get('rememberConnectionInput').checked=true;
+newTab.dom.get('rememberConnectionInput').handlers.get('change')();
+assert.equal(JSON.parse(deviceStore.get(rememberKey)).username,settings.username,'Save the actual successful login, not unsent form edits');
+const otherTab=boot(new Map(),deviceStore);otherTab.clients[0].emit('connect');
+newTab.app.disconnect(true);
+assert(!deviceStore.has(rememberKey));assert.equal(newSession.size,0);
+assert.equal(newTab.dom.get('passwordInput').value,'');
+assert.equal(newTab.dom.get('rememberConnectionInput').checked,false);
+otherTab.windowHandlers.get('storage')({key:rememberKey,newValue:null});
+otherTab.clients[0].emit('connect');
+assert(!deviceStore.has(rememberKey),'Another tab cannot re-save forgotten credentials on reconnect');
+assert.equal(boot(new Map(),deviceStore).clients.length,0);
+
+// Rejected saved logins are forgotten and request corrected credentials.
+deviceStore.set(rememberKey,JSON.stringify({...settings,remember:true}));
+const badLogin=boot(new Map(),deviceStore);
+badLogin.clients[0].emit('error',new Error('Connection refused: Bad username or password'));
+assert(!deviceStore.has(rememberKey));
+assert.equal(badLogin.dom.get('settingsDialog').open,true);
+assert.equal(badLogin.dom.get('passwordInput').value,'');
+assert.equal(badLogin.dom.get('rememberConnectionInput').checked,false);
+assert.equal(boot(new Map(),deviceStore).clients.length,0);
+deviceStore.set(rememberKey,JSON.stringify({...settings,remember:true}));
+const unavailable=boot(new Map(),deviceStore);
+unavailable.clients[0].emit('error',new Error('Network unavailable'));
+assert(deviceStore.has(rememberKey),'A temporary network failure must not forget a valid login');
+deviceStore.set(rememberKey,'{broken-json');
+assert.equal(boot(new Map(),deviceStore).clients.length,0);
+deviceStore.set(rememberKey,JSON.stringify({host:'fixture',password:'not-a-complete-login'}));
+assert.equal(boot(new Map(),deviceStore).clients.length,0);
+
+// Storage denial leaves the app usable for a manual/tab-only login.
+const denied=boot(new Map(),new Map(),true);
+for(const [id,value] of [['hostInput',settings.host],['portInput',settings.port],['pathInput',settings.path],['usernameInput',settings.username],['passwordInput',settings.password]]) denied.dom.get(id).value=value;
+denied.dom.get('rememberConnectionInput').checked=true;
+denied.dom.get('settingsForm').handlers.get('submit')({preventDefault(){}});
+assert.equal(denied.clients.length,1,'Blocked optional price storage must not block a valid MQTT form submit');
+denied.clients[0].emit('connect');
+assert.equal(denied.clients[0].connected,true);
+assert(denied.dom.get('rememberConnectionStatus').textContent.includes('δεν επέτρεψε αποθήκευση'));
+assert.equal(denied.app.readMqttSession().password,settings.password);
+console.log('Remember-device opt-in, successful-login persistence, fresh-tab auto-connect, opt-out/logout, cross-tab forgetting, auth rejection and storage denial PASS');
+
