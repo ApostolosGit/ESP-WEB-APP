@@ -115,51 +115,91 @@ const server=http.createServer((req,res)=>{
  assert.equal(xGroups.length,6,'Stacked tariff segments must share one X position per non-empty block');
  await page.screenshot({path:path.join(artifacts,'chart.png')});
 
- // Feed genuine MQTT history frames into the real APP DOM: 48 hourly slots,
- // both comparison rows, table visibility toggle and downloadable Greek CSV.
+ // Reproduce asymmetric positive/negative ranges in Chromium: tick boxes
+ // must not overlap or clip, and each bar stays on its side of zero.
+ for(const values of [[7,3,1],[-7,-3,-1],[100,-.001,0],[.001,-100,0],[1e6,-1e6,0],[1e-6,-2e-6,0],[0,0,0]]) {
+  for(const dual of [false,true]) {
+   await page.evaluate(({values,dual})=>{
+    document.getElementById('energyHistoryPlot').innerHTML=EnergyHistory.svg([{label:'signed',values,flags:0}],dual);
+   },{values,dual});
+   const signed=await page.locator('#energyHistoryPlot svg').evaluate(svg=>{
+    const bounds=node=>{const b=node.getBBox();return {left:b.x,right:b.x+b.width,top:b.y,bottom:b.y+b.height};};
+    return {
+     ticks:[...svg.querySelectorAll('.y-tick')].map(bounds).sort((a,b)=>a.top-b.top),
+     zero:+svg.querySelector('.zero-axis').getAttribute('y1'),
+     bars:[...svg.querySelectorAll('rect')].map(rect=>({
+      top:+rect.getAttribute('y'),bottom:+rect.getAttribute('y')+Number(rect.getAttribute('height')),
+      value:Number(rect.querySelector('title').textContent.match(/: ([^ ]+) kWh/)[1].replaceAll('.','').replace(',','.'))
+     })),
+     labels:[...svg.querySelectorAll('.bar-value')].map(bounds),height:svg.viewBox.baseVal.height
+    };
+   });
+   for(let i=0;i<signed.ticks.length;i++) {
+    const tick=signed.ticks[i];
+    assert(tick.left>=0 && tick.top>=0 && tick.bottom<=signed.height,'Signed Y tick must fit inside the SVG');
+    if(i) assert(signed.ticks[i-1].bottom+2<tick.top,'Signed Y tick labels must not overlap');
+   }
+   for(const bar of signed.bars) {
+    assert(bar.top>=28-0.01 && bar.bottom<=254.01,'Signed bars stay within the plot');
+    if(bar.value>0) assert(bar.bottom<=signed.zero+0.01);
+    if(bar.value<0) assert(bar.top>=signed.zero-0.01);
+   }
+   for(const label of signed.labels) assert(label.top>=0 && label.bottom<282,'Value labels do not collide with the X labels');
+   if(dual && values[0]===100) await page.screenshot({path:path.join(artifacts,'signed-axis.png')});
+  }
+ }
+
+
+ // Real DOM: collect the recent day first, reveal the upper chart, then
+ // request older checkpoint pages in reverse order for the lower chart.
  await page.evaluate(()=>{
   window.mockClient.publish=(topic,payload)=>{window.historyPublish={topic,payload};};
   document.getElementById('energyHistoryRange').value='48';
   const id='jsy_house-84F3EB041E89';
-  testApp.loadEnergyHistory(id);
   const anchor=Date.parse('2026-10-19T12:00:00+03:00')/1000;
-  window.sendHistoryPage=(start,count,next)=>{
-   const token=window.historyPublish.payload.split('|')[1];
-   frame(id,'admin/history',`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
-   for(let i=start;i<start+count;i++) {
-    const ep=anchor-48*3600+i*1800;
-    frame(id,'admin/history',`P|${token}|${ep}|1|${5000+i*120}|0`);
-   }
-   frame(id,'admin/history',`E|${token}|${next}|${count}`);
+  window.fixtureRaw=Array.from({length:151},(_,i)=>({epoch:anchor-75*3600+i*1800,import:5000+i*120,export:Math.min(i,102)*240}));
+  window.sendNextHistoryPage=()=>{
+   const request=window.historyPublish.payload.split('|'),token=request[1],offset=+request[3];
+   const first=offset===0?102:offset,rows=fixtureRaw.slice(first,first+16),next=first+rows.length;
+   frame(id,'admin/history',`B|${token}|0|${fixtureRaw[0].epoch}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+   for(const row of rows) frame(id,'admin/history',`P|${token}|${row.epoch}|1|${row.import}|${row.export}`);
+   frame(id,'admin/history',`E|${token}|${next<fixtureRaw.length?next:-1}|${rows.length}`);
+   return offset;
   };
-  sendHistoryPage(48,16,1016); // First page covers part of the most recent day.
+  testApp.loadEnergyHistory(id);
+  sendNextHistoryPage();
  });
- assert.equal(await page.locator('.history-comparison-panel svg').count(),2,'Graph appears while older pages are still pending');
+ assert.equal(await page.locator('.history-comparison-panel svg').count(),0,'Do not reveal the old end of the upper day before the newest end arrives');
+ await page.evaluate(()=>{sendNextHistoryPage();sendNextHistoryPage();sendNextHistoryPage();});
+ assert.equal(await page.locator('.history-comparison-panel svg').count(),2);
  assert.match(await page.locator('#energyHistoryStatus').textContent(),/Προσωρινή προβολή/);
+ assert.equal(await page.locator('.history-comparison-panel').nth(0).locator('rect').count()>0,true);
+ assert.equal(await page.locator('.history-comparison-panel').nth(1).locator('rect').count(),0,'Upper day is shown before any lower-day bars');
  assert.equal(await page.locator('#energyHistoryPlot').getAttribute('aria-busy'),'true');
- assert.equal(await page.locator('#energyHistoryTable table').count(),0,'No hidden table is created for the graph');
+ assert.equal(await page.locator('#energyHistoryTable table').count(),0);
  assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),false);
+ await page.screenshot({path:path.join(artifacts,'upper-first.png')});
  await page.locator('#energyHistoryTableToggle').click();
- assert.equal(await page.locator('#energyHistoryTable tbody tr').count(),48);
  const partialTable=await page.locator('#energyHistoryTable').textContent();
- await page.evaluate(()=>sendHistoryPage(0,16,968));
- assert.notEqual(await page.locator('#energyHistoryTable').textContent(),partialTable,'An open table follows subsequent verified pages');
+ assert.match(partialTable,/Αναμονή δεδομένων/);
+ assert.equal(await page.evaluate(()=>sendNextHistoryPage()),86);
+ assert.notEqual(await page.locator('#energyHistoryTable').textContent(),partialTable);
+ const partialLower=await page.locator('.history-comparison-panel').nth(1).locator('rect').evaluateAll(rects=>rects.map(r=>+r.getAttribute('x')));
+ assert(partialLower.length>0);
  await page.locator('#energyHistoryTableToggle').click();
- await page.evaluate(()=>{
-  for(let start=16;start<=96;start+=16) {
-   const count=Math.min(16,97-start);
-   sendHistoryPage(start,count,start+count<97?952+start+count:-1);
-  }
- });
+ assert.equal(await page.evaluate(()=>sendNextHistoryPage()),70);
+ const nextLower=await page.locator('.history-comparison-panel').nth(1).locator('rect').evaluateAll(rects=>rects.map(r=>+r.getAttribute('x')));
+ assert(nextLower.length>partialLower.length);
+ assert(Math.max(...nextLower)>Math.max(...partialLower),'Lower day fills from its newer left edge towards older right columns');
+ assert.equal(await page.evaluate(()=>sendNextHistoryPage()),54);
  assert.equal(await page.locator('#energyHistoryPlot').getAttribute('aria-busy'),'false');
- assert(!/Προσωρινή προβολή/.test(await page.locator('#energyHistoryStatus').textContent()));
  assert.equal(await page.locator('#energyHistoryTable table').count(),0);
  const completedPlot=await page.locator('#energyHistoryPlot').innerHTML();
  await page.locator('#reloadEnergyHistory').click();
- assert.equal(await page.locator('#energyHistoryPlot').innerHTML(),completedPlot,'Refresh keeps the last chart until a validated page arrives');
+ assert.equal(await page.locator('#energyHistoryPlot').innerHTML(),completedPlot);
  assert.match(await page.locator('#energyHistoryStatus').textContent(),/προηγούμενο γράφημα/);
  assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),false);
- await page.evaluate(()=>sendHistoryPage(0,97,-1));
+ await page.evaluate(()=>{for(let i=0;i<7;i++)sendNextHistoryPage();});
  assert.equal(await page.locator('.history-comparison-panel').count(),2);
  assert.deepEqual(await page.locator('.history-comparison-panel h3').allTextContents(),['Πρόσφατες 24 ώρες','Προηγούμενες 24 ώρες']);
  assert.equal(await page.locator('.history-comparison-panel svg').count(),2);
@@ -168,7 +208,7 @@ const server=http.createServer((req,res)=>{
    viewBox:svg.getAttribute('viewBox'),
    left:svg.getBoundingClientRect().left,
    width:svg.getBoundingClientRect().width,
-   axis:[...svg.querySelectorAll('text[x="50"]')].map(t=>t.textContent)
+   axis:[...svg.querySelectorAll('.y-tick')].map(t=>t.textContent)
  })));
  // The full 48-hour fixture covers all three Greek time-of-day zones in
  // each row, not merely in the legend.
