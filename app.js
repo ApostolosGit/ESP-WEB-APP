@@ -2385,7 +2385,7 @@
   function readRememberedMqtt() {
     try {
       const saved = readMqttConnection(localStorage, MQTT_REMEMBER_KEY);
-      return saved ? {...saved,remember:true} : null;
+      return saved?.remember === true ? saved : null;
     } catch (_) { return null; }
   }
   function writeMqttSession(settings) {

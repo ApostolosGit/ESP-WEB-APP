@@ -202,6 +202,10 @@ deviceStore.set(rememberKey,'{broken-json');
 assert.equal(boot(new Map(),deviceStore).clients.length,0);
 deviceStore.set(rememberKey,JSON.stringify({host:'fixture',password:'not-a-complete-login'}));
 assert.equal(boot(new Map(),deviceStore).clients.length,0);
+deviceStore.set(rememberKey,JSON.stringify({...settings,remember:false}));
+assert.equal(boot(new Map(),deviceStore).clients.length,0,'A stored connection without opt-in cannot enable automatic login');
+deviceStore.set(rememberKey,JSON.stringify(settings));
+assert.equal(boot(new Map(),deviceStore).clients.length,0,'Legacy/unmarked durable data does not count as opt-in');
 
 // Storage denial leaves the app usable for a manual/tab-only login.
 const denied=boot(new Map(),new Map(),true);
