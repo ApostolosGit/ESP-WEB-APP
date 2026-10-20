@@ -219,9 +219,10 @@ window.EnergyHistory = (() => {
       } else if (!dual) {
         const value = data.total;
         const yy = y(value);
-        const barTop = value >= 0 ? yy : zero;
         const barWidth = Math.max(8, Math.min(42, step - 10));
-        const heightPx = Math.max(value === 0 ? 1 : 2, Math.abs(yy - zero));
+        const minHeight = Math.max(value === 0 ? 1 : 2, Math.abs(yy - zero));
+        const barTop = value >= 0 ? Math.max(top,zero-minHeight) : zero;
+        const heightPx = value >= 0 ? zero-barTop : Math.min(bottom-zero,minHeight);
         out += `<rect x="${center-barWidth/2}" y="${barTop}" width="${barWidth}" height="${heightPx}" fill="${colors[hourZone ?? 0]}" data-hour-zone="${hourZone ?? 0}" opacity="${group.flags?'.55':'1'}"><title>${xml(group.label)} · ${hourZone===null?'Ζ':zoneNames[hourZone]}: ${data.labels[0]} kWh</title></rect>`;
         const labelY = value >= 0 ? Math.max(12,yy-6) : Math.min(bottom+16,yy+14);
         out += `<text class="bar-value" x="${center}" y="${labelY}" text-anchor="middle" fill="#263d4b" font-size="11" font-weight="600">${data.labels[0]}</text>`;
@@ -233,8 +234,11 @@ window.EnergyHistory = (() => {
           const from = value > 0 ? positive : negative;
           const to = from + value;
           const yFrom = y(from), yTo = y(to);
-          const rectY = Math.min(yFrom, yTo);
-          const rectH = Math.max(2, Math.abs(yTo - yFrom));
+          // Expand tiny segments away from zero, never across it. A fixed
+          // minimum height at the natural Y could flip their visible sign.
+          const minHeight = Math.max(2, Math.abs(yTo - yFrom));
+          const rectY = value > 0 ? Math.max(top,yFrom-minHeight) : yFrom;
+          const rectH = value > 0 ? yFrom-rectY : Math.min(bottom-yFrom,minHeight);
           out += `<rect x="${center-barWidth/2}" y="${rectY}" width="${barWidth}" height="${rectH}" fill="${colors[j]}" data-hour-zone="${j}" opacity="${group.flags?'.62':'1'}"><title>${xml(group.label)} · ${zoneNames[j]}: ${data.labels[j]} kWh</title></rect>`;
           if (rectH >= 16) {
             out += `<text class="segment-value" x="${center}" y="${rectY+rectH/2+4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">${data.labels[j]}</text>`;

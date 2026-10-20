@@ -141,8 +141,8 @@ const server=http.createServer((req,res)=>{
    }
    for(const bar of signed.bars) {
     assert(bar.top>=28-0.01 && bar.bottom<=254.01,'Signed bars stay within the plot');
-    if(bar.value>0) assert(bar.bottom<=signed.zero+0.01);
-    if(bar.value<0) assert(bar.top>=signed.zero-0.01);
+    if(bar.value>0) assert(bar.bottom<=signed.zero+0.01,JSON.stringify({values,dual,bar,zero:signed.zero}));
+    if(bar.value<0) assert(bar.top>=signed.zero-0.01,JSON.stringify({values,dual,bar,zero:signed.zero}));
    }
    for(const label of signed.labels) assert(label.top>=0 && label.bottom<282,'Value labels do not collide with the X labels');
    if(dual && values[0]===100) await page.screenshot({path:path.join(artifacts,'signed-axis.png')});
