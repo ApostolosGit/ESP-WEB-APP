@@ -15,7 +15,8 @@ const server=http.createServer((req,res)=>{
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
- const page=await browser.newPage({viewport:{width:1280,height:850}});
+ const context=await browser.newContext({viewport:{width:1280,height:850}});
+ const page=await context.newPage();
  await page.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
  await page.goto(`http://127.0.0.1:${server.address().port}/`);
  await page.locator('#settingsDialog').waitFor({state:'visible'});
@@ -251,6 +252,57 @@ const server=http.createServer((req,res)=>{
  assert(mobileCharts.scroll<=mobileCharts.viewport,'History modal must not overflow mobile viewport');
  assert(mobileCharts.content>mobileCharts.plot,'Wide charts should scroll inside plot on mobile');
  await page.screenshot({path:path.join(artifacts,'compare-48h-mobile.png')});
+
+ // A new tab shares device storage but has no pre-existing tab session.
+ // Only explicit remember-device consent may make it connect on startup.
+ await page.locator('#closeEnergyHistory').click();
+ await page.setViewportSize({width:1280,height:850});
+ await page.locator('#settingsBtn').click();
+ assert.equal(await page.locator('#rememberConnectionInput').isChecked(),false);
+ await page.locator('#rememberConnectionInput').check();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('energy.mqtt.remembered')).username),'fixture');
+ await page.screenshot({path:path.join(artifacts,'remember-device.png')});
+ await page.setViewportSize({width:390,height:850});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.screenshot({path:path.join(artifacts,'remember-device-mobile.png')});
+ async function freshTab() {
+  const tab=await page.context().newPage();
+  await tab.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
+  await tab.addInitScript(()=>{
+   window.resumeClients=[];
+   window.mqtt={connect(url,settings){
+    const handlers=new Map();
+    const c={url,settings,connected:false,on:(e,f)=>handlers.set(e,f),
+     subscribe(_t,_o,cb){cb(null,[{qos:0}]);},publish(_t,_p,_o,cb){cb?.(null);},end(){c.connected=false;},
+     emit(e,...args){if(e==='connect')c.connected=true;handlers.get(e)?.(...args);}};
+    resumeClients.push(c);return c;
+   }};
+  });
+  await tab.goto(`http://127.0.0.1:${server.address().port}/`);
+  return tab;
+ }
+ const resumed=await freshTab();
+ assert.equal(await resumed.evaluate(()=>sessionStorage.getItem('energy.mqtt.tab-session')),null);
+ assert.equal(await resumed.evaluate(()=>resumeClients.length),1);
+ assert.equal(await resumed.evaluate(()=>resumeClients[0].settings.password),'test-only');
+ assert.equal(await resumed.locator('#settingsDialog').isVisible(),false);
+ assert.equal(await resumed.locator('#rememberConnectionInput').isChecked(),true);
+ await resumed.evaluate(()=>resumeClients[0].emit('connect'));
+ await resumed.reload();
+ assert.equal(await resumed.evaluate(()=>resumeClients.length),1,'Reload reuses the successful tab session');
+ await page.locator('#rememberConnectionInput').uncheck();
+ await resumed.waitForFunction(()=>!document.getElementById('rememberConnectionInput').checked);
+ await resumed.evaluate(()=>resumeClients[0].emit('connect'));
+ assert.equal(await resumed.evaluate(()=>localStorage.getItem('energy.mqtt.remembered')),null,'Another tab cannot re-save credentials after opt-out');
+ await page.locator('#rememberConnectionInput').check();
+ await page.locator('#disconnectBtn').click();
+ assert.equal(await page.evaluate(()=>localStorage.getItem('energy.mqtt.remembered')),null);
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('energy.mqtt.tab-session')),null);
+ assert.equal(await page.locator('#passwordInput').inputValue(),'');
+ const forgotten=await freshTab();
+ await forgotten.locator('#settingsDialog').waitFor({state:'visible'});
+ assert.equal(await forgotten.evaluate(()=>resumeClients.length),0,'Explicit logout disables new-tab auto-login');
+ await resumed.close();await forgotten.close();
  await browser.close();server.close();console.log('Real-browser responsive 24h comparison, collapsed table/reveal, UTF-8 CSV export and existing UI PASS');
 })().catch(e=>{console.error(e);server.close();process.exit(1);});
 
