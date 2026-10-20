@@ -156,6 +156,11 @@ feed(`B|${token}|1|1700000000|2072576|100000|1972576|4000|3000|2000|0|1791302400
 feed(`D|${token}|20731|1791302400|1791302460|16|60|1000|2000|3000|500|500|1500`);
 feed(`E|${token}|16|1`);
 assert.equal(packets.length,2);
+assert($('energyHistoryPlot').innerHTML.includes('<svg'),'First verified page is shown before the next page arrives');
+assert($('energyHistoryStatus').textContent.includes('Προσωρινή προβολή'));
+assert.equal($('energyHistoryTable').innerHTML,'','Hidden table is not built for a partial page');
+assert.equal(context.historySession.csvRows,null);
+assert.equal($('exportEnergyHistoryCsv').disabled,true,'Partial results cannot be exported as complete');
 assert.equal(packets.at(-1).split('|').at(-1),'16');
 feed(`E|${token}|16|1`);
 assert.equal(packets.length,2);
@@ -164,24 +169,36 @@ feed(`B|${token}|1|1700000000|2072576|100000|1972576|4000|3000|2000|0|1791302400
 feed(`E|${token}|-1|0`);
 assert($('energyHistoryMemory').textContent.includes('1972576'));
 assert($('energyHistoryPlot').innerHTML.includes('<svg'));
+assert.equal($('energyHistoryTable').innerHTML,'','Completed graph does not build an unused table');
+assert.equal(context.historySession.tableData,null);
+assert.equal(context.historySession.csvRows,null);
+context.renderEnergyHistoryTable();
 assert($('energyHistoryTable').innerHTML.includes('Ζ2 πρωί'));
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 assert($('energyHistoryTable').innerHTML.includes('Χωρίς δεδομένα'));
 assert.equal($('energyHistoryTable').hidden,true,'History table stays hidden by default');
 assert.equal($('exportEnergyHistoryCsv').disabled,false);
-assert.equal(context.historySession.csvRows.length,31);
+assert.equal(context.historySession.csvRows,null,'Revealing a table does not create CSV rows');
+assert.equal(context.energyHistoryCsvRows().length,31);
 assert.equal(context.historySession.csvRows[0][0],'Περίοδος');
 assert($('energyHistoryStatus').textContent.includes('30 ημέρες · νεότερη → παλαιότερη'));
 
+const previousPlot=$('energyHistoryPlot').innerHTML;
 context.loadEnergyHistory('test');
+assert.equal($('energyHistoryPlot').innerHTML,previousPlot,'Refreshing the same device/range preserves the graph');
+assert($('energyHistoryStatus').textContent.includes('προηγούμενο γράφημα'));
+assert.equal($('energyHistoryTable').innerHTML,'');
+assert.equal($('exportEnergyHistoryCsv').disabled,true);
 token=packets.at(-1).split('|')[1];
 feed(`B|${token}|1|1700000000|2072576|100000|1972576|4000|3000|2000|0|1791302400`);
 feed(`E|${token}|-1|1`);
 assert.equal(packets.at(-1).split('|').at(-1),'0');
 assert.equal(context.historySession.retry,1);
+assert.equal($('energyHistoryPlot').innerHTML,previousPlot,'A rejected page cannot replace the previous graph');
 
 $('energyHistoryRange').value='48';
 context.loadEnergyHistory('test');
+assert.equal($('energyHistoryPlot').innerHTML,'','Changing range clears a graph from the other range');
 token=packets.at(-1).split('|')[1];
 assert.equal(packets.at(-1).split('|')[2],'0');
 const p0=Date.parse('2026-10-12T14:00:00+03:00')/1000;
@@ -195,15 +212,19 @@ assert.equal(($('energyHistoryPlot').innerHTML.match(/<svg /g)||[]).length,2);
 assert($('energyHistoryPlot').innerHTML.includes('Πρόσφατες 24 ώρες'));
 assert($('energyHistoryPlot').innerHTML.includes('Προηγούμενες 24 ώρες'));
 assert.equal($('energyHistoryTable').hidden,true);
-assert.equal(context.historySession.csvRows.length,49);
+assert.equal(context.historySession.csvRows,null);
+assert.equal($('energyHistoryTable').innerHTML,'');
+assert.equal(context.energyHistoryCsvRows().length,49);
 assert.equal(context.historySession.csvRows[0].length,6);
 assert.equal(context.historySession.rows.size,3);
+assert.equal($('energyHistoryTable').innerHTML,'','CSV export does not construct the table DOM');
+context.renderEnergyHistoryTable();
 assert($('energyHistoryTable').innerHTML.includes('Σύνολο'));
 
 assert(!code.includes('<option value="7">'));
 assert(code.includes('<option value="48">Τελευταίες 48 ώρες · ανά ώρα</option>'));
 assert(code.includes('`${BASE}/+/admin/history`'));
-assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.61'));
+assert(fs.readFileSync(resolve(root,'sw.js'),'utf8').includes('./history.js?v=5.62'));
 assert(fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('history.js')<fs.readFileSync(resolve(root,'index.html'),'utf8').indexOf('app.js'));
 // The firmware sends the first 16 checkpoints with a 24h cutoff, then E
 // exposes the checkpoint cursor. The APP must rewind and fetch older records.
@@ -227,9 +248,52 @@ feed(`P|${token}|${anchor-44*3600+1800}|1|500|0`);
 feed(`E|${token}|-1|2`);
 assert.equal(context.historySession.rows.size,18);
 assert($('energyHistoryStatus').textContent.includes('νεότερη → παλαιότερη'));
+assert.equal($('energyHistoryTable').innerHTML,'');
+context.renderEnergyHistoryTable();
 assert($('energyHistoryTable').innerHTML.includes('0,5'));
 const chrono=H.hourly([...context.historySession.rows.values()],48,anchor);
 assert(chrono[0].epoch>chrono.at(-1).epoch);
 assert(chrono.some(g=>g.values && g.epoch<=anchor-43*3600));
-// Prior GitHub CI had an outdated v5.57 assertion; v5.59 is now consistent.
-console.log('APP v5.60: 48 hourly, 24 two-hour ticks, newest-first, 48h backfill, legend colors, MQTT paging and PWA cache PASS');
+// Failed pages must not leak into the progressively displayed history.
+context.loadEnergyHistory('test');
+token=packets.at(-1).split('|')[1];
+feed(`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+feed(`P|${token}|${anchor-3600}|1|1000|0`);
+feed(`E|${token}|-1|2`); // Missing second record: discard this whole page.
+assert.equal(context.historySession.rows.size,0);
+assert.equal(context.historySession.pageData.size,0);
+assert.equal(context.historySession.retry,1);
+token=packets.at(-1).split('|')[1];
+feed(`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+feed(`P|${token}|${anchor-1800}|1|1500|0`);
+feed(`E|${token}|-1|1`);
+assert.equal(context.historySession.rows.size,1);
+assert(!context.historySession.rows.has(anchor-3600));
+
+// Keep a verified partial graph on timeout; do not advertise full completion.
+context.loadEnergyHistory('test');
+token=packets.at(-1).split('|')[1];
+feed(`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+feed(`P|${token}|${anchor-1800}|1|1500|0`);
+feed(`E|${token}|16|1`);
+const partialPlot=$('energyHistoryPlot').innerHTML;
+assert.equal(context.energyHistoryCsvRows(),null);
+for(let attempt=0;attempt<3;attempt++) {
+  const callback=timers.get(context.historySession.timer);
+  assert(callback); callback();
+}
+assert.equal(context.historySession.loading,false);
+assert.equal($('energyHistoryPlot').innerHTML,partialPlot);
+assert($('energyHistoryStatus').textContent.includes('δεν ολοκληρώθηκε'));
+assert($('energyHistoryStatus').textContent.includes('μόνο τα δεδομένα'));
+assert.equal($('exportEnergyHistoryCsv').disabled,true);
+token=packets.at(-1).split('|')[1];
+feed(`B|${token}|0|${anchor}|1|1|0|1|1|1|0|${anchor}`);
+feed(`E|${token}|-1|0`);
+assert.equal(context.historySession.complete,false,'Late frames cannot complete an abandoned request');
+
+// Opening another device does not show the previous device's plot.
+context.loadEnergyHistory('another-device');
+assert.equal($('energyHistoryPlot').innerHTML,'');
+console.log('Progressive verified MQTT pages, preserved refresh, lazy table/CSV, retries, timeouts, history and PWA PASS');
+
