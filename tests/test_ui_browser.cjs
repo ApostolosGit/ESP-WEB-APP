@@ -122,15 +122,44 @@ const server=http.createServer((req,res)=>{
   document.getElementById('energyHistoryRange').value='48';
   const id='jsy_house-84F3EB041E89';
   testApp.loadEnergyHistory(id);
-  const token=window.historyPublish.payload.split('|')[1];
   const anchor=Date.parse('2026-10-19T12:00:00+03:00')/1000;
-  frame(id,'admin/history',`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
-  for(let i=0;i<=96;i++) {
-   const ep=anchor-48*3600+i*1800;
-   frame(id,'admin/history',`P|${token}|${ep}|1|${5000+i*120}|0`);
-  }
-  frame(id,'admin/history',`E|${token}|-1|97`);
+  window.sendHistoryPage=(start,count,next)=>{
+   const token=window.historyPublish.payload.split('|')[1];
+   frame(id,'admin/history',`B|${token}|0|${anchor-48*3600}|2072576|100000|1972576|4000|3000|2000|0|${anchor}`);
+   for(let i=start;i<start+count;i++) {
+    const ep=anchor-48*3600+i*1800;
+    frame(id,'admin/history',`P|${token}|${ep}|1|${5000+i*120}|0`);
+   }
+   frame(id,'admin/history',`E|${token}|${next}|${count}`);
+  };
+  sendHistoryPage(48,16,1016); // First page covers part of the most recent day.
  });
+ assert.equal(await page.locator('.history-comparison-panel svg').count(),2,'Graph appears while older pages are still pending');
+ assert.match(await page.locator('#energyHistoryStatus').textContent(),/Προσωρινή προβολή/);
+ assert.equal(await page.locator('#energyHistoryPlot').getAttribute('aria-busy'),'true');
+ assert.equal(await page.locator('#energyHistoryTable table').count(),0,'No hidden table is created for the graph');
+ assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),false);
+ await page.locator('#energyHistoryTableToggle').click();
+ assert.equal(await page.locator('#energyHistoryTable tbody tr').count(),48);
+ const partialTable=await page.locator('#energyHistoryTable').textContent();
+ await page.evaluate(()=>sendHistoryPage(0,16,968));
+ assert.notEqual(await page.locator('#energyHistoryTable').textContent(),partialTable,'An open table follows subsequent verified pages');
+ await page.locator('#energyHistoryTableToggle').click();
+ await page.evaluate(()=>{
+  for(let start=16;start<=96;start+=16) {
+   const count=Math.min(16,97-start);
+   sendHistoryPage(start,count,start+count<97?952+start+count:-1);
+  }
+ });
+ assert.equal(await page.locator('#energyHistoryPlot').getAttribute('aria-busy'),'false');
+ assert(!/Προσωρινή προβολή/.test(await page.locator('#energyHistoryStatus').textContent()));
+ assert.equal(await page.locator('#energyHistoryTable table').count(),0);
+ const completedPlot=await page.locator('#energyHistoryPlot').innerHTML();
+ await page.locator('#reloadEnergyHistory').click();
+ assert.equal(await page.locator('#energyHistoryPlot').innerHTML(),completedPlot,'Refresh keeps the last chart until a validated page arrives');
+ assert.match(await page.locator('#energyHistoryStatus').textContent(),/προηγούμενο γράφημα/);
+ assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),false);
+ await page.evaluate(()=>sendHistoryPage(0,97,-1));
  assert.equal(await page.locator('.history-comparison-panel').count(),2);
  assert.deepEqual(await page.locator('.history-comparison-panel h3').allTextContents(),['Πρόσφατες 24 ώρες','Προηγούμενες 24 ώρες']);
  assert.equal(await page.locator('.history-comparison-panel svg').count(),2);
@@ -153,6 +182,12 @@ const server=http.createServer((req,res)=>{
  assert(Math.abs(aligned[0].left-aligned[1].left)<1,'24-hour comparisons must align on X');
  assert.equal(await page.locator('#energyHistoryTable').isVisible(),false);
  assert.equal(await page.locator('#exportEnergyHistoryCsv').isEnabled(),true);
+ const [lazyDownload]=await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#exportEnergyHistoryCsv').click()
+ ]);
+ assert.equal(fs.readFileSync(await lazyDownload.path(),'utf8').trim().split('\r\n').length,49);
+ assert.equal(await page.locator('#energyHistoryTable table').count(),0,'Exporting CSV must not build an unused DOM table');
  await page.locator('#energyHistoryTableToggle').click();
  assert.equal(await page.locator('#energyHistoryTable').isVisible(),true);
  assert.equal(await page.locator('#energyHistoryTable tbody tr').count(),48);
@@ -178,3 +213,4 @@ const server=http.createServer((req,res)=>{
  await page.screenshot({path:path.join(artifacts,'compare-48h-mobile.png')});
  await browser.close();server.close();console.log('Real-browser responsive 24h comparison, collapsed table/reveal, UTF-8 CSV export and existing UI PASS');
 })().catch(e=>{console.error(e);server.close();process.exit(1);});
+

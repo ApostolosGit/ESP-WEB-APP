@@ -17,7 +17,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.61";
+  const APP_VERSION = "5.62";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -2043,7 +2043,7 @@
   historyDialog.className = 'modal energy-history-dialog';
   historyDialog.innerHTML = `<div class="dialog-head"><h2>Ιστορικό ενέργειας</h2><button type="button" id="closeEnergyHistory">Κλείσιμο</button></div>
     <div class="history-controls"><select id="energyHistoryRange"><option value="48">Τελευταίες 48 ώρες · ανά ώρα</option><option value="30">Τελευταίες 30 ημέρες</option></select><button id="reloadEnergyHistory" type="button">Ανανέωση</button></div>
-    <p id="energyHistoryStatus"></p><div id="energyHistoryMemory"></div><div id="energyHistoryPlot" class="energy-history-plot"></div>
+    <p id="energyHistoryStatus" role="status" aria-live="polite"></p><div id="energyHistoryMemory"></div><div id="energyHistoryPlot" class="energy-history-plot" aria-busy="false"></div>
     <div class="history-table-actions">
       <a id="energyHistoryTableToggle" href="#energyHistoryTable" aria-controls="energyHistoryTable" aria-expanded="false">Προβολή πίνακα τιμών</a>
       <button id="exportEnergyHistoryCsv" type="button" disabled>Εξαγωγή CSV</button>
@@ -2052,29 +2052,50 @@
     <p class="history-note">Ισοζύγιο = εισαγωγή − εξαγωγή. Θετικό: ενέργεια από το δίκτυο. Αρνητικό: πλεόνασμα προς το δίκτυο. Δεν είναι η συνολική παραγωγή Φ/Β. ×: χωρίς καταγραφή. Αχνές μπάρες: τρέχουσα, μερική ή εκτιμώμενη περίοδος. Η καταγραφή ξεκινά με τη V5.00· τα παλιά δεδομένα δεν συμπληρώνονται.</p>`;
   document.body.appendChild(historyDialog);
   const historyStatus = () => $('energyHistoryStatus');
+  function stopHistoryLoading(message) {
+    const h=historySession; if(!h) return;
+    clearTimeout(h.timer);
+    h.begun=false; h.complete=false; h.loading=false;
+    $('energyHistoryPlot').setAttribute?.('aria-busy','false');
+    $('exportEnergyHistoryCsv').disabled=true;
+    historyStatus().textContent=message+(h.hasRendered
+      ? ' Εμφανίζονται μόνο τα δεδομένα που έχουν ήδη ληφθεί.'
+      : h.preservedPlot ? ' Εμφανίζεται το προηγούμενο γράφημα.' : '');
+  }
   function requestHistoryPage(offset=0, retry=0) {
     const h=historySession;
-    if(!h || !client?.connected) { if(h) historyStatus().textContent='Δεν υπάρχει σύνδεση MQTT. Πατήστε Ανανέωση όταν συνδεθεί.'; return; }
+    if(!h || !client?.connected) { if(h) stopHistoryLoading('Δεν υπάρχει σύνδεση MQTT. Πατήστε Ανανέωση όταν συνδεθεί.'); return; }
     clearTimeout(h.timer);
     h.offset=offset; h.retry=retry; h.token=(Date.now()+Math.floor(Math.random()*10000))%4000000000+1;
-    h.pageRows=0; h.begun=false;
+    h.pageRows=0; h.begun=false; h.pageData=new Map();
     client.publish(`${BASE}/${h.id}/admin/request`,`history_get|${h.token}|${h.range===48?0:1}|${offset}`,{qos:0,retain:false});
     h.timer=setTimeout(()=>{
       if(historySession!==h) return;
       if(retry<2) requestHistoryPage(offset,retry+1);
-      else { historyStatus().textContent='Η λήψη δεν ολοκληρώθηκε. Πατήστε Ανανέωση για νέα προσπάθεια.'; renderEnergyHistory(false); }
+      else stopHistoryLoading('Η λήψη δεν ολοκληρώθηκε. Πατήστε Ανανέωση για νέα προσπάθεια.');
     },10000);
   }
   function loadEnergyHistory(id) {
-    if(historySession) clearTimeout(historySession.timer);
+    const previous=historySession;
+    if(previous) clearTimeout(previous.timer);
     const range=Number($('energyHistoryRange').value);
-    historySession={id,range,rows:new Map(),meta:null,backfillAttempted:false};
-    $('energyHistoryPlot').innerHTML=''; $('energyHistoryTable').innerHTML=''; $('energyHistoryMemory').textContent='';
+    const preserve=previous?.id===id && previous.range===range && (previous.hasRendered || previous.preservedPlot);
+    historySession={id,range,rows:new Map(),meta:null,backfillAttempted:false,
+      hasRendered:false,preservedPlot:Boolean(preserve),complete:false,loading:true,groups:null,tableData:null,csvRows:null};
+    if(!preserve) {
+      $('energyHistoryPlot').innerHTML='';
+      $('energyHistoryMemory').textContent='';
+    }
+    $('energyHistoryPlot').setAttribute?.('aria-busy','true');
+    $('energyHistoryTable').innerHTML='';
     $('energyHistoryTable').hidden=true;
     $('energyHistoryTableToggle').textContent='Προβολή πίνακα τιμών';
     $('energyHistoryTableToggle').setAttribute?.('aria-expanded','false');
     $('exportEnergyHistoryCsv').disabled=true;
-    historyStatus().textContent='Λήψη ιστορικού…'; requestHistoryPage();
+    historyStatus().textContent=preserve
+      ? 'Ανανέωση ιστορικού… Εμφανίζεται το προηγούμενο γράφημα μέχρι να ληφθούν νέα δεδομένα.'
+      : 'Λήψη ιστορικού…';
+    requestHistoryPage();
   }
   function openEnergyHistory(id) {
     const device=devices.get(id);
@@ -2103,39 +2124,69 @@
           EnergyHistory.svg(groups.slice(24,48),dual,groups)+'</section></div>'
       : EnergyHistory.svg(groups,dual);
     $('energyHistoryPlot').innerHTML=groups.length ? legend+plot : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
-    const names=dual?['Ζ1','Ζ2 πρωί','Ζ2 βράδυ','Σύνολο']:['Ζ'];
+    h.groups=groups; h.dual=dual; h.hasRendered=true; h.preservedPlot=false; h.complete=complete; h.loading=!complete;
+    h.tableData=null; h.csvRows=null;
+    // Hidden tables and CSV rows are built only when explicitly requested.
+    if($('energyHistoryTable').hidden) $('energyHistoryTable').innerHTML='';
+    else renderEnergyHistoryTable();
+    $('energyHistoryPlot').setAttribute?.('aria-busy',String(!complete));
+    $('exportEnergyHistoryCsv').disabled=!complete;
+    historyStatus().textContent=complete
+      ? `${h.id} · ${h.range===48?'48 ώρες · ανά ώρα · νεότερη → παλαιότερη':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`
+      : `Λήψη ιστορικού… Προσωρινή προβολή · ${h.rows.size} εγγραφές. Το γράφημα συμπληρώνεται.`;
+    if(h.meta) $('energyHistoryMemory').textContent=`LittleFS: σύνολο ${h.meta.total} / χρησιμοποιημένα ${h.meta.used} / ελεύθερα ${h.meta.free} bytes. RAM με ενεργό MQTT: ${h.meta.heap} bytes, μεγαλύτερο μπλοκ ${h.meta.block}, ελάχιστη RAM σε αυτή την εκκίνηση ${h.meta.minHeap}. ${h.meta.failed?'Πρόβλημα αποθήκευσης ιστορικού.':''}`;
+  }
+  function energyHistoryTableData() {
+    const h=historySession;
+    if(!h?.groups) return null;
+    if(h.tableData) return h.tableData;
+    const names=h.dual?['Ζ1','Ζ2 πρωί','Ζ2 βράδυ','Σύνολο']:['Ζ'];
     const columns=['Περίοδος',...names.map(n=>`${n} kWh`),'Καταγραφή'];
-    const tableRows=groups.map(g=>{
-      const vs=g.values ? (dual ? g.values : [g.values.reduce((a,b)=>a+b,0)]) : null;
+    const tableRows=h.groups.map(g=>{
+      const vs=g.values ? (h.dual ? g.values : [g.values.reduce((a,b)=>a+b,0)]) : null;
       const flags=g.flags; const status=flags&32?'Χωρίς δεδομένα':[(flags&16?'Τρέχουσα':''),(flags&1?'Μερική':''),(flags&2?'Εκτιμώμενη κατανομή':''),(flags&4?'Επαναφορά μετρητή':''),(flags&8?'Σφάλμα αποθήκευσης':'')].filter(Boolean).join(' · ')||'Καταγεγραμμένη';
-      const displayValues=vs && dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
+      const displayValues=vs && h.dual ? [...vs,vs.reduce((sum,value)=>sum+value,0)] : vs;
       return {label:g.label,detail:g.detail,values:names.map((_,i)=>displayValues?EnergyHistory.number(displayValues[i]):'—'),status};
     });
+    h.tableData={columns,tableRows};
+    return h.tableData;
+  }
+  function renderEnergyHistoryTable() {
+    const data=energyHistoryTableData(); if(!data) return;
+    const {columns,tableRows}=data;
     $('energyHistoryTable').innerHTML=`<div class="history-table-wrap"><table class="utility-history-table"><thead><tr>${columns.map(n=>`<th>${escapeHtml(n)}</th>`).join('')}</tr></thead><tbody>${tableRows.map(row=>
       `<tr><td title="${escapeHtml(row.detail)}">${escapeHtml(row.label)}</td>${row.values.map(v=>`<td>${escapeHtml(v)}</td>`).join('')}<td>${escapeHtml(row.status)}</td></tr>`
     ).join('')}</tbody></table></div>`;
-    h.csvRows=[columns,...tableRows.map(row=>[row.label,...row.values,row.status])];
-    $('exportEnergyHistoryCsv').disabled=!complete;
-    if(complete) historyStatus().textContent=`${h.id} · ${h.range===48?'48 ώρες · ανά ώρα · νεότερη → παλαιότερη':'30 ημέρες · νεότερη → παλαιότερη'} · ${h.meta?.start ? 'Καταγραφή από '+EnergyHistory.local(h.meta.start) : 'Αναμονή πρώτης μέτρησης με έγκυρη ώρα'}`;
-    if(h.meta) $('energyHistoryMemory').textContent=`LittleFS: σύνολο ${h.meta.total} / χρησιμοποιημένα ${h.meta.used} / ελεύθερα ${h.meta.free} bytes. RAM με ενεργό MQTT: ${h.meta.heap} bytes, μεγαλύτερο μπλοκ ${h.meta.block}, ελάχιστη RAM σε αυτή την εκκίνηση ${h.meta.minHeap}. ${h.meta.failed?'Πρόβλημα αποθήκευσης ιστορικού.':''}`;
+  }
+  function energyHistoryCsvRows() {
+    const h=historySession;
+    if(!h?.complete) return null;
+    if(!h.csvRows) {
+      const data=energyHistoryTableData(); if(!data) return null;
+      h.csvRows=[data.columns,...data.tableRows.map(row=>[row.label,...row.values,row.status])];
+    }
+    return h.csvRows;
   }
   function handleEnergyHistory(id,text) {
     const h=historySession, p=text.split('|');
-    if(!h || id!==h.id || +p[1]!==h.token) return;
+    if(!h?.loading || id!==h.id || +p[1]!==h.token) return;
     const nums=p.slice(1).map(Number);
     if(nums.some(n=>!Number.isFinite(n) || !Number.isSafeInteger(n))) return;
     if(p[0]==='B' && p.length===12 && +p[2]===(h.range===48?0:1)) {
-      h.begun=true; h.pageRows=0;
+      h.begun=true; h.pageRows=0; h.pageData=new Map();
       h.meta={start:+p[3],total:+p[4],used:+p[5],free:+p[6],heap:+p[7],block:+p[8],minHeap:+p[9],failed:+p[10],epoch:+p[11]};
     } else if(h.begun && p[0]==='D' && p.length===13 && h.range===30) {
       const row={day:+p[2],first:+p[3],last:+p[4],flags:+p[5],covered:+p[6],wh:p.slice(7).map(Number)};
-      h.rows.set(row.day,row); ++h.pageRows;
+      h.pageData.set(row.day,row); ++h.pageRows;
     } else if(h.begun && p[0]==='P' && p.length===6 && h.range===48) {
       const row={epoch:+p[2],generation:+p[3],import:+p[4],export:+p[5]};
-      h.rows.set(row.epoch,row); ++h.pageRows;
+      h.pageData.set(row.epoch,row); ++h.pageRows;
     } else if(h.begun && p[0]==='E' && p.length===4) {
       clearTimeout(h.timer);
-      if(+p[3]!==h.pageRows) { if(h.retry<2) requestHistoryPage(h.offset,h.retry+1); else {historyStatus().textContent='Ελλιπής μεταφορά ιστορικού. Πατήστε Ανανέωση.';renderEnergyHistory(false);} return; }
+      if(+p[3]!==h.pageRows) { if(h.retry<2) requestHistoryPage(h.offset,h.retry+1); else stopHistoryLoading('Ελλιπής μεταφορά ιστορικού. Πατήστε Ανανέωση.'); return; }
+      // Only verified pages enter the graph. Retries discard incomplete data.
+      for(const [key,row] of h.pageData) h.rows.set(key,row);
+      h.begun=false;
       const nextOffset=+p[2];
       // The ESP8266 v5.58 history sender starts mode 0 at a 24-hour cutoff.
       // Its first E packet reveals the checkpoint cursor (after 16 records);
@@ -2148,11 +2199,12 @@
         const firstRecentIndex=nextOffset-h.pageRows;
         const rewindOffset=Math.max(1,firstRecentIndex-56);
         if(rewindOffset<firstRecentIndex) {
+          renderEnergyHistory(false);
           requestHistoryPage(rewindOffset);
           return;
         }
       }
-      if(nextOffset>=0 && nextOffset>h.offset) requestHistoryPage(nextOffset);
+      if(nextOffset>=0 && nextOffset>h.offset) { renderEnergyHistory(false); requestHistoryPage(nextOffset); }
       else renderEnergyHistory();
     }
   }
@@ -2163,16 +2215,18 @@
   $('energyHistoryTableToggle').addEventListener('click',event=>{
     event.preventDefault();
     const table=$('energyHistoryTable'), show=table.hidden;
+    if(show) renderEnergyHistoryTable();
     table.hidden=!show;
     $('energyHistoryTableToggle').textContent=show?'Απόκρυψη πίνακα τιμών':'Προβολή πίνακα τιμών';
     $('energyHistoryTableToggle').setAttribute('aria-expanded',String(show));
   });
   $('exportEnergyHistoryCsv').addEventListener('click',()=>{
     const h=historySession;
-    if(!h?.csvRows?.length || $('exportEnergyHistoryCsv').disabled) return;
+    if(!h?.complete || $('exportEnergyHistoryCsv').disabled) return;
+    const csvRows=energyHistoryCsvRows(); if(!csvRows) return;
     // UTF-8 BOM and semicolon columns for spreadsheet apps with Greek locale.
     const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
-    const csv='\uFEFF'+h.csvRows.map(row=>row.map(quote).join(';')).join('\r\n')+'\r\n';
+    const csv='\uFEFF'+csvRows.map(row=>row.map(quote).join(';')).join('\r\n')+'\r\n';
     const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
     const link=document.createElement('a');
     link.href=url;
@@ -2792,7 +2846,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.61", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.62", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
@@ -2834,4 +2888,5 @@
     connect(resumedMqttSession);
   } else setTimeout(() => ui.settingsDialog.showModal(), 250);
 })();
+
 
