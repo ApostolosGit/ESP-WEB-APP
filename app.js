@@ -1573,6 +1573,82 @@
     ventHistoryTimeout = null;
   }
 
+
+  function ventDayLabel(key) {
+    if(!Number.isInteger(key) || key<40000 || key>80000)return "—";
+    const year=Math.floor(key/400)+1900,day=key%400;
+    if(day<0 || day>365)return "—";
+    const d=new Date(Date.UTC(year,0,1)+day*86400000);
+    return d.toISOString().slice(0,10);
+  }
+  function renderVent30Days(h) {
+    const count=h.seen.size*3;
+    $("ventHistoryStatus").textContent =
+      `${h.id} · 30 ημέρες · ${count}/30 ημερήσιες εγγραφές${h.complete?" · ολοκληρώθηκε":" · λήψη…"}`;
+    const rows=h.dailyRows||[];
+    const fields=["insideMin","insideMax","insideAvg","outsideMin","outsideMax","outsideAvg"];
+    const numeric=rows.flatMap(r=>r?fields.map(k=>r[k]):[]).filter(Number.isFinite);
+    if(!numeric.length){
+      $("ventHistoryChart").innerHTML='<p class="admin-help">Δεν υπάρχουν ακόμη καταγραφές 30 ημερών. Απαιτείται firmware 1.07+ και χρόνος λειτουργίας.</p>';
+      $("ventHistoryTable").innerHTML="";
+      return;
+    }
+    const observedMin=Math.min(...numeric),observedMax=Math.max(...numeric);
+    let axisMin=Math.floor(observedMin*2)/2,axisMax=Math.ceil(observedMax*2)/2;
+    if(axisMin===axisMax){axisMin-=0.5;axisMax+=0.5;}
+    const L=70,W=960,T=54,H=Math.max(245,Math.min(660,Math.ceil((axisMax-axisMin)*28)));
+    const B=T+H;
+    const x=i=>L+i*W/29,y=v=>T+(axisMax-v)*H/(axisMax-axisMin);
+    const format=v=>Number(v.toFixed(2)).toLocaleString("el-GR",{maximumFractionDigits:2});
+    const grid=[];
+    for(let tick=Math.round(axisMin*2);tick<=Math.round(axisMax*2);tick++){
+      const yy=y(tick/2);
+      grid.push(`<line class="vent-grid-half-degree" x1="${L}" x2="${L+W}" y1="${yy.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="currentColor" stroke-opacity=".15"/>`);
+      grid.push(`<text class="vent-y-label" x="${L-9}" y="${(yy+4).toFixed(2)}" text-anchor="end">${format(tick/2)}°C</text>`);
+    }
+    for(let i=0;i<30;i++){
+      const xx=x(i);
+      grid.push(`<line class="vent-grid-day" x1="${xx.toFixed(2)}" x2="${xx.toFixed(2)}" y1="${T}" y2="${B}" stroke="currentColor" stroke-opacity=".09"/>`);
+      if(i%3===0)
+        grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${ventDayLabel(rows[i]?.dayKey).slice(5)}</text>`);
+    }
+    const series=[
+      ["insideMin","#dc2626","7 5"],["insideMax","#dc2626","7 5"],["insideAvg","#dc2626",""],
+      ["outsideMin","#2563eb","7 5"],["outsideMax","#2563eb","7 5"],["outsideAvg","#2563eb",""]
+    ];
+    const path=key=>{
+      let d="",active=false;
+      rows.forEach((r,i)=>{
+        const value=r?.[key];
+        if(!Number.isFinite(value)){active=false;return;}
+        d+=`${active?"L":"M"}${x(i).toFixed(2)},${y(value).toFixed(2)} `;
+        active=true;
+      });
+      return d.trim();
+    };
+    $("ventHistoryChart").innerHTML=`<svg class="vent-history-plot" viewBox="0 0 1110 ${B+60}" width="1110" height="${B+60}"
+      data-min-temp="${observedMin}" data-max-temp="${observedMax}"
+      data-axis-min="${axisMin}" data-axis-max="${axisMax}" role="img"
+      aria-label="Στατιστικά ημερήσιας θερμοκρασίας 30 ημερών, 0,5 βαθμοί ανά γραμμή">
+      <g>${grid.join("")}</g>
+      ${series.map(([key,color,dash])=>`<path class="vent-daily-series" data-series="${key}"
+        d="${path(key)}" fill="none" stroke="${color}" ${dash?`stroke-dasharray="${dash}"`:""}
+        stroke-width="2.4"/>`).join("")}
+      <g class="vent-history-legend">
+        <text x="${L+10}" y="22" fill="#dc2626">● Μέσα · min/max διακεκομμένες · μέση συνεχής</text>
+        <text x="${L+470}" y="22" fill="#2563eb">● Έξω · min/max διακεκομμένες · μέση συνεχής</text>
+      </g></svg>`;
+    if(!h.complete){$("ventHistoryTable").innerHTML="";return;}
+    const td=v=>Number.isFinite(v)?format(v):"—";
+    $("ventHistoryTable").innerHTML=`<details open><summary>Πίνακας ημερήσιων τιμών (30 ημέρες)</summary>
+      <div class="vent-history-table-scroll"><table><thead><tr>
+      <th>Ημερομηνία</th><th>Μέσα min °C</th><th>Μέσα max °C</th><th>Μέσα μέση °C</th>
+      <th>Έξω min °C</th><th>Έξω max °C</th><th>Έξω μέση °C</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${ventDayLabel(r?.dayKey)}</td>
+        ${fields.map(k=>`<td>${td(r?.[k])}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div></details>`;
+  }
+
   function renderVentHistory() {
     const h = ventHistorySession;
     if (!h) return;
