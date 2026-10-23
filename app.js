@@ -1187,7 +1187,7 @@
     const firmwareUrl = OTA_MANIFEST_BASE_URL + encodeURIComponent(manifest.file);
     const ventilation = meterType(device) === "VENTILATION";
     const command = `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}` +
-      (ventilation ? `|${OTA_PIN}` : "");
+      (ventilation ? `|${ui.otaPinInput.value.trim()}` : "");
 
     const sent = publish(id, "admin/request", command, (err) => {
       if (!err) return;
