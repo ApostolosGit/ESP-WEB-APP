@@ -1443,3 +1443,20 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .vent-control-grid button.vent-selected:not(:disabled) { opacity: 1; }
 .vent-time-schedule { font-size: .96rem; margin: 14px 2px 6px; line-height: 1.6; }
 .vent-time-schedule b { font-variant-numeric: tabular-nums; }
+
+/* Ventilation grid v5.69: actual extrema, 0.5°C by 1-hour guidelines. */
+.vent-history-plot .vent-y-label,
+.vent-history-plot .vent-x-label {
+  fill: currentColor;
+  font: 12px system-ui, sans-serif;
+}
+.vent-history-plot .vent-y-label.vent-extreme {
+  font-weight: 750;
+  font-size: 12px;
+}
+.vent-history-plot .vent-history-legend text {
+  font: 600 14px system-ui, sans-serif;
+}
+.vent-history-plot .vent-history-grid line {
+  vector-effect: non-scaling-stroke;
+}
