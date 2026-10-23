@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.65">
+  <link rel="stylesheet" href="style.css?v=5.66">
 </head>
 <body>
   <div class="app-shell">
@@ -48,15 +48,17 @@
 
     <main>
       <section id="emptyState" class="empty-state">
-        <strong>Δεν υπάρχει online μετρητής.</strong>
-        <span>Συνδέσου στο HiveMQ και η εφαρμογή θα εμφανίσει αυτόματα DDS238 / JSY-MK-333 που είναι online.</span>
+        <strong>Δεν υπάρχει online συσκευή.</strong>
+        <span>Συνδέσου στο HiveMQ και η εφαρμογή θα εμφανίσει αυτόματα DDS238, JSY-MK-333 και VENTILATION που επικοινωνούν με τον ίδιο MQTT broker.</span>
+        <p>Αν ο εξαερισμός λειτουργεί τοπικά αλλά δεν εμφανίζεται εδώ, άνοιξε το <a href="http://192.168.1.77/mqtt-status" target="_blank" rel="noopener">διαγνωστικό MQTT του ESP8266 (v1.01+)</a> από το ίδιο LAN. Χρειάζεται <code>mqtt_connected: true</code> και ίδιο HiveMQ με το app.</p>
+        <p>Εναλλακτικά, όταν είσαι στο ίδιο Wi-Fi μπορείς να ανοίξεις την <a href="http://192.168.1.77/recovery-update" target="_blank" rel="noopener">τοπική ανάκτηση firmware</a> (απαιτεί Setup PIN). Δεν εξαρτάται από το MQTT.app.</p>
       </section>
 
       <section id="devicesGrid" class="devices-grid" aria-live="polite"></section>
     </main>
 
     <footer>
-      <span>MQTT.app. v5.65</span>
+      <span>MQTT.app. v5.66</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -170,10 +172,14 @@
           <label>Τέλος παύσης <input id="ventPauseTo" type="time" value="08:30" step="60"></label>
         </div>
         <button id="saveVentScheduleBtn" type="button" class="secondary-btn full-btn">ΑΠΟΘΗΚΕΥΣΗ ΠΑΥΣΗΣ</button>
+        <div id="ventTimeSettings">
         <div class="vent-field-grid">
           <label>Ώρα ESP (HH:MM:SS) <input id="ventClockInput" type="time" step="1" value="12:00:00"></label>
         </div>
         <button id="saveVentTimeBtn" type="button" class="secondary-btn full-btn">ΡΥΘΜΙΣΗ ΩΡΑΣ</button>
+        </div>
+        <p id="ventOtaNotice" class="admin-help">Firmware 1.01+ απαιτείται για διορθωμένο ON/OFF και HIGH/LOW. Δεν στέλνουμε αυτόματο OTA σε μη δοκιμασμένο εξαερισμό.</p>
+        <p class="admin-help">Τοπική αναβάθμιση μέσω Wi-Fi: <a href="http://192.168.1.77/recovery-update" target="_blank" rel="noopener">Άνοιγμα ESP8266 Recovery Upload</a> (Setup PIN). Μόνο εφόσον ο ESP εκκινεί και υπάρχει επιβεβαιωμένο .bin.</p>
         <p class="admin-help">Το MQTT OTA εξαερισμού παραμένει απενεργοποιημένο. Αν δεν υπάρχει φυσική πρόσβαση μέσω USB, προτίμησε επιβεβαιωμένη σύνδεση στο Recovery AP για δοκιμές.</p>
       </section>
 
@@ -392,8 +398,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.65"></script>
-  <script src="app.js?v=5.65"></script>
+  <script src="history.js?v=5.66"></script>
+  <script src="app.js?v=5.66"></script>
 </body>
 </html>
 
