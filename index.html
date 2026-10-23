@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.73">
+  <link rel="stylesheet" href="style.css?v=5.74">
 </head>
 <body>
   <div class="app-shell">
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.73</span>
+      <span>MQTT.app. v5.74</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -385,7 +385,9 @@
       <div class="dialog-head"><div><p class="eyebrow">VENTILATION</p><h2>Ιστορικό θερμοκρασίας</h2></div>
         <button id="closeVentHistoryBtn" class="icon-btn light" type="button" aria-label="Κλείσιμο">×</button></div>
       <div class="vent-history-switches">
-        <button id="ventHistoryCurrentBtn" type="button" class="secondary-btn">ΣΗΜΕΡΑ</button>
+        <button id="ventHistoryCurrentBtn" type="button" class="secondary-btn">24 ΩΡΕΣ</button>
+        <button id="ventHistoryCompareBtn" type="button" class="secondary-btn">48 ΩΡΕΣ</button>
+        <button id="ventHistoryDaysBtn" type="button" class="secondary-btn">30 ΗΜΕΡΕΣ</button>
         <button id="ventHistoryPreviousBtn" type="button" class="secondary-btn">ΧΘΕΣ</button>
       </div>
       <p id="ventHistoryStatus" class="admin-help" role="status">Αναμονή λήψης…</p>
@@ -398,8 +400,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.73"></script>
-  <script src="app.js?v=5.73"></script>
+  <script src="history.js?v=5.74"></script>
+  <script src="app.js?v=5.74"></script>
 </body>
 </html>
 
