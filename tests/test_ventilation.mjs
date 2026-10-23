@@ -1,0 +1,147 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+
+const appSource = fs.readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const nodes = new Map(), timers = new Map(), clients = [];
+let idClock = 0, confirms = 0;
+const addIds = (markup) => {
+  for (const found of String(markup).matchAll(/\\bid="([^"]+)"/g))
+    if (!nodes.has(found[1])) nodes.set(found[1], makeNode());
+};
+function makeNode() {
+  return {value:"",innerHTML:"",textContent:"",open:false,disabled:false,checked:false,
+    dataset:{},handlers:new Map(),
+    classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+    addEventListener(event,callback){this.handlers.set(event,callback);},
+    insertAdjacentElement(_,node){addIds(node.innerHTML);},
+    querySelectorAll(){return [];},
+    showModal(){this.open=true;},close(){this.open=false;},focus(){},reset(){},setAttribute(){}
+  };
+}
+addIds(html);
+const footer=[makeNode(),makeNode()];
+const memory = new Map();
+const ctx={
+  console:{log(){},warn(){},error(){}},Date,Intl,Map,Set,Math,Number,JSON,URL,Promise,
+  document:{body:{appendChild(n){addIds(n.innerHTML);}},getElementById(id){return nodes.get(id)||null;},
+    createElement(){return makeNode();},querySelectorAll(){return footer;},addEventListener(){},visibilityState:"visible"},
+  window:{addEventListener(){},confirm(){confirms++;return true;},location:{reload(){}}},
+  navigator:{serviceWorker:{controller:null,addEventListener(){},register:async()=>({update:async()=>{}})}},
+  localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)},
+  sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
+  setTimeout(fn){timers.set(++idClock,fn);return idClock;},clearTimeout(id){timers.delete(id);},
+  setInterval(){return ++idClock;},clearInterval(){},
+  mqtt:{connect(){const handlers=new Map();const c={connected:false,published:[],
+    on(name,fn){handlers.set(name,fn);},
+    emit(name,...args){if(name==="connect")this.connected=true;handlers.get(name)?.(...args);},
+    subscribe(_topics,_options,cb){cb(null,[]);},
+    publish(t,p,_options,cb){this.published.push({topic:t,payload:p});cb?.(null);},
+    end(){this.connected=false;}
+  };clients.push(c);return c;}}
+};
+vm.createContext(ctx);
+const patched=appSource.replace(/\\}\\)\\(\\);\\s*$/, "globalThis.vtest={devices,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
+assert.notEqual(patched,appSource,"app test bridge");
+vm.runInContext(patched,ctx);
+
+ctx.vtest.devices.clear();
+const settings={host:"mqtt.example",port:"8884",path:"/mqtt",username:"tester",password:"not-real"};
+ctx.vtest.devices.clear();
+const app=ctx.vtest;
+const connection=ctx.mqtt.connect;
+ // Use the real application connect by exposing it from the closure below.
+assert(html.includes('id="ventilationSettings"'));
+assert(html.includes('id="ventHistoryDialog"'));
+assert(html.includes('v=5.65'));
+assert(appSource.includes('const APP_VERSION = "5.65"'));
+assert(appSource.includes('type === "VENTILATION" || !/'));
+assert(appSource.includes('meterType(device) === "VENTILATION"'));
+assert(appSource.includes('startRemoteOta(id)'));
+
+// Open a real MQTT connection using the same mocked client API as the production app.
+const start=appSource.replace(/\\}\\)\\(\\);\\s*$/, "globalThis.vtest={devices,connect,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
+assert(start.includes("globalThis.vtest"));
+const ctx2={...ctx};
+const doc2=new Map();
+function buildContext(){
+  const nodeMap=new Map(), published=[];
+  const defineIds=markup=>{for(const m of String(markup).matchAll(/\\bid="([^"]+)"/g))if(!nodeMap.has(m[1]))nodeMap.set(m[1],mockNode());};
+  function mockNode(){return {innerHTML:"",textContent:"",value:"",open:false,disabled:false,checked:false,handlers:new Map(),dataset:{},
+    classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+    addEventListener(k,fn){this.handlers.set(k,fn);},insertAdjacentElement(_,n){defineIds(n.innerHTML);},
+    querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;},focus(){},setAttribute(){},reset(){}};}
+  defineIds(html);
+  const clientHandlers=new Map();
+  const c={connected:false,published,on(k,fn){clientHandlers.set(k,fn);},
+    emit(k,...args){if(k==="connect")this.connected=true;clientHandlers.get(k)?.(...args);},
+    subscribe(_t,_o,cb){cb(null,[]);},
+    publish(topic,payload,_o,cb){published.push({topic,payload});cb?.(null);},end(){this.connected=false;}};
+  const storage=new Map();
+  const sandbox={console:{log(){},warn(){},error(){}},Date,Intl,Map,Set,Math,Number,JSON,URL,Promise,
+    document:{getElementById:k=>nodeMap.get(k)||null,createElement:mockNode,
+      querySelectorAll:()=>[mockNode(),mockNode()],addEventListener(){},body:{appendChild:n=>defineIds(n.innerHTML)},visibilityState:"visible"},
+    window:{addEventListener(){},location:{reload(){}},confirm(){return true;}},
+    navigator:{serviceWorker:{controller:null,addEventListener(){},register:async()=>({update:async()=>{}})}},
+    localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+    sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
+    setTimeout(fn){return ++idClock;},clearTimeout(){},setInterval(){return ++idClock;},clearInterval(){},
+    mqtt:{connect(){return c;}}};
+  vm.createContext(sandbox);
+  vm.runInContext(start,sandbox);
+  sandbox.vtest.connect(settings);
+  c.emit("connect");
+  const message=(id,suffix,data)=>c.emit("message",`home/energy/${id}/${suffix}`,{
+    toString:()=>typeof data==="string"?data:JSON.stringify(data)
+  },{retain:false});
+  return {app:sandbox.vtest,c,message,nodes:nodeMap,published};
+}
+const b=buildContext();
+const vid="vent-A1B2C3D4E5F6";
+b.message(vid,"status","online");
+b.message(vid,"health",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.00",meter_ok:true,read_attempted:true,has_sample:true,rssi:-45,chip_id:123});
+b.message(vid,"state",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.00",temp_inside:21.3,temp_outside:15.2,temp_middle:19.1,humidity_inside:60,humidity_outside:45,fan_on:false,speed:"low",mode:"auto",season:"winter",stop_from:"06:15",stop_to:"08:30",sensors_ok:true,time:"10:30:00",mains_present:true,rf_high:false,time_synced:true});
+assert.equal(b.app.meterType(b.app.devices.get(vid)),"VENTILATION");
+const card=b.nodes.get("devicesGrid").innerHTML;
+assert(card.includes("21,3") && card.includes("Έλεγχος 220V") && card.includes("Ανεμιστήρας"));
+assert(!card.includes("Μετρητής ΔΕΗ"));
+assert.equal(b.app.otaManifestMatchesDevice({meter:"DDS238"},b.app.devices.get(vid)),false);
+assert.throws(()=>b.app.otaManifestUrlForDevice(b.app.devices.get(vid)),/OTA/);
+const countBefore=b.published.length;
+await b.app.startRemoteOta(vid);
+assert.equal(b.published.length,countBefore,"No remote OTA for ventilation");
+assert.equal(b.app.sendVentCommand(vid,"vent_fan|on"),false,"AUTO forbids manual fan");
+assert.equal(b.app.sendVentCommand(vid,"vent_mode|manual"),true);
+assert(b.published.some(x=>x.payload==="vent_mode|manual"));
+b.message(vid,"admin/response",{ok:true,cmd:"vent_mode"});
+b.message(vid,"state",{...b.app.devices.get(vid).state,mode:"manual"});
+assert.equal(b.app.sendVentCommand(vid,"vent_fan|on"),true);
+assert(b.published.some(x=>x.payload==="vent_fan|on"));
+b.message(vid,"admin/response",{ok:true,cmd:"vent_fan"});
+assert.equal(b.app.sendVentCommand(vid,"ota_https|10|xxxx|https://example.org"),false);
+assert.equal(b.app.sendVentCommand(vid,"vent_schedule|06:15|08:30"),true);
+b.message(vid,"admin/response",{ok:true,cmd:"vent_schedule"});
+assert.equal(b.app.sendVentCommand(vid,"vent_time|12:34:56"),true);
+b.message(vid,"admin/response",{ok:true,cmd:"vent_time"});
+
+b.app.openVentHistory(vid);
+assert(b.published.some(x=>x.payload==="vent_history|current"));
+for(let offset=0;offset<96;offset+=8){
+  const data=Array.from({length:8},(_,i)=>
+    i===1&&offset===0?"null,null":`${(20+i/10).toFixed(1)},${(14+i/10).toFixed(1)}`);
+  b.message(vid,"vent/history",`R|current|${offset}|${data.join("|")}`);
+}
+b.message(vid,"vent/history","E|current");
+assert.equal(b.app.getHistory().complete,true);
+assert.equal(b.app.getHistory().seen.size,12);
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes("<svg"));
+assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
+assert.equal(b.app.requestVentHistory(vid,"previous"),true);
+assert(b.published.some(x=>x.payload==="vent_history|previous"));
+// Packets for the old day must not pollute the newly selected day.
+b.message(vid,"vent/history","R|current|0|1,2|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
+assert.equal(b.app.getHistory().seen.size,0);
+b.message(vid,"vent/history","R|previous|0|notvalid,3|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
+assert.equal(b.app.getHistory().seen.size,0);
+console.log("Ventilation v1.00 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
