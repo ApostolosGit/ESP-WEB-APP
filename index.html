@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.71">
+  <link rel="stylesheet" href="style.css?v=5.72">
 </head>
 <body>
   <div class="app-shell">
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.71</span>
+      <span>MQTT.app. v5.72</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -186,8 +186,8 @@
       <section class="settings-section ota-settings">
         <p class="eyebrow">FIRMWARE</p>
         <h3>OTA Update</h3>
-        <p id="otaTargetInfo" class="admin-help">Επίλεξε OTA-UPDATE για έλεγχο της διαθέσιμης έκδοσης.</p>
-        <button id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button">OTA-UPDATE</button>
+        <p id="otaTargetInfo" class="admin-help">Γίνεται έλεγχος νεότερης έκδοσης από τον OTA server πριν ενεργοποιηθεί το κουμπί.</p>
+        <button id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button" disabled>OTA-UPDATE</button>
         <p class="admin-help">Η αναβάθμιση γίνεται από Internet μέσω MQTT + HTTPS. Ο ESP θα αποσυνδεθεί προσωρινά και θα επανεκκινήσει όταν ολοκληρωθεί.</p>
         <div class="settings-divider"></div>
         <h3>Restart ESP</h3>
@@ -398,8 +398,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.71"></script>
-  <script src="app.js?v=5.71"></script>
+  <script src="history.js?v=5.72"></script>
+  <script src="app.js?v=5.72"></script>
 </body>
 </html>
 
