@@ -1480,6 +1480,7 @@
 
   // Ventilation v1.00 publishes 12 non-retained chunks per requested day:
   // R|current/previous|offset|inside,outside|... and E|range.
+  const ventAdminTimeouts = new Map();
   let ventHistorySession = null;
   let ventHistoryTimeout = null;
   function ventHistoryClearTimeout() {
@@ -1651,7 +1652,31 @@
          command.startsWith("vent_season|") || command.startsWith("vent_schedule|")) &&
         !window.confirm(`Αποστολή εντολής στον πραγματικό εξαερισμό ${id};\n\n${command}\n\nΕπιβεβαίωσε ότι η εγκατάσταση μπορεί να λειτουργήσει με ασφάλεια.`)) return false;
     adminTargetId = id;
-    sendAdmin(command, `Αποστολή: ${command}…`);
+    adminBusy.add(id);
+    updateAdminButtons();
+    setAdminStatus(`Αποστολή: ${command}…`);
+    const sent = publish(id, "admin/request", command, (err) => {
+      if (!err) return;
+      clearTimeout(ventAdminTimeouts.get(id));
+      ventAdminTimeouts.delete(id);
+      adminBusy.delete(id);
+      updateAdminButtons();
+      setAdminStatus(`Αποτυχία εντολής: ${err.message || err}`, "error");
+    });
+    if (!sent) {
+      adminBusy.delete(id);
+      updateAdminButtons();
+      setAdminStatus("Δεν εστάλη εντολή: σύνδεση MQTT μη διαθέσιμη.", "error");
+      return false;
+    }
+    const timeout = setTimeout(() => {
+      if (ventAdminTimeouts.get(id) !== timeout) return;
+      ventAdminTimeouts.delete(id);
+      adminBusy.delete(id);
+      updateAdminButtons();
+      if (adminTargetId === id) setAdminStatus("Δεν ελήφθη επιβεβαίωση από τον ESP8266. Έλεγξε την κατάσταση πριν επαναλάβεις.", "error");
+    }, 12000);
+    ventAdminTimeouts.set(id, timeout);
     refreshVentControls(device);
     return true;
   }
@@ -1900,6 +1925,10 @@
       return;
     }
 
+    if (meterType(devices.get(id) || {id,state:{}}) === "VENTILATION") {
+      clearTimeout(ventAdminTimeouts.get(id));
+      ventAdminTimeouts.delete(id);
+    }
     adminBusy.delete(id);
     updateAdminButtons();
 
