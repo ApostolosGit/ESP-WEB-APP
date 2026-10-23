@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.65'));
-assert(appSource.includes('const APP_VERSION = "5.65"'));
+assert(html.includes('v=5.66'));
+assert(appSource.includes('const APP_VERSION = "5.66"'));
 assert(appSource.includes('type === "VENTILATION" || !/'));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
 assert(appSource.includes('startRemoteOta(id)'));
@@ -100,8 +100,8 @@ function buildContext(){
 const b=buildContext();
 const vid="vent-A1B2C3D4E5F6";
 b.message(vid,"status","online");
-b.message(vid,"health",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.00",meter_ok:true,read_attempted:true,has_sample:true,rssi:-45,chip_id:123});
-b.message(vid,"state",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.00",temp_inside:21.3,temp_outside:15.2,temp_middle:19.1,humidity_inside:60,humidity_outside:45,fan_on:false,speed:"low",mode:"auto",season:"winter",stop_from:"06:15",stop_to:"08:30",sensors_ok:true,time:"10:30:00",mains_present:true,rf_high:false,time_synced:true});
+b.message(vid,"health",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.01",meter_ok:true,read_attempted:true,has_sample:true,rssi:-45,chip_id:123});
+b.message(vid,"state",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.01",temp_inside:21.3,temp_outside:15.2,temp_middle:19.1,humidity_inside:60,humidity_outside:45,fan_on:false,speed:"low",mode:"auto",season:"winter",stop_from:"06:15",stop_to:"08:30",sensors_ok:true,time:"10:30:00",mains_present:true,rf_high:false,time_synced:true});
 assert.equal(b.app.meterType(b.app.devices.get(vid)),"VENTILATION");
 const card=b.nodes.get("devicesGrid").innerHTML;
 assert(card.includes("21,3") && card.includes("Έλεγχος 220V") && card.includes("Ανεμιστήρας"));
@@ -124,6 +124,12 @@ assert.equal(b.app.sendVentCommand(vid,"vent_schedule|06:15|08:30"),true);
 b.message(vid,"admin/response",{ok:true,cmd:"vent_schedule"});
 assert.equal(b.app.sendVentCommand(vid,"vent_time|12:34:56"),true);
 b.message(vid,"admin/response",{ok:true,cmd:"vent_time"});
+b.message(vid,"state",{...b.app.devices.get(vid).state,time_synced:true});
+assert.equal(b.app.sendVentCommand(vid,"vent_time|12:34:57"),false,"NTP forbids manual time");
+b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.00",time_synced:false});
+assert.equal(b.app.sendVentCommand(vid,"vent_mode|auto"),false,"Legacy reversed relay build must be command-locked");
+b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.01"});
+
 
 b.app.openVentHistory(vid);
 assert(b.published.some(x=>x.payload==="vent_history|current"));
@@ -144,4 +150,4 @@ b.message(vid,"vent/history","R|current|0|1,2|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
 assert.equal(b.app.getHistory().seen.size,0);
 b.message(vid,"vent/history","R|previous|0|notvalid,3|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
 assert.equal(b.app.getHistory().seen.size,0);
-console.log("Ventilation v1.00 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
+console.log("Ventilation v1.01 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
