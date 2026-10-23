@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.72">
+  <link rel="stylesheet" href="style.css?v=5.73">
 </head>
 <body>
   <div class="app-shell">
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.72</span>
+      <span>MQTT.app. v5.73</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -178,9 +178,9 @@
         </div>
         <button id="saveVentTimeBtn" type="button" class="secondary-btn full-btn">ΡΥΘΜΙΣΗ ΩΡΑΣ</button>
         </div>
-        <p id="ventOtaNotice" class="admin-help">Το MQTT OTA εξαερισμού παραμένει κλειδωμένο μέχρι να δοκιμαστεί η διαδικασία ανάκτησης.</p>
+        <p id="ventOtaNotice" class="admin-help">Το MQTT OTA υποστηρίζεται από firmware 1.04+, με επιβεβαίωση και PIN. Η 1.06+ αναφέρει άμεσα σφάλματα προελέγχου/HTTPS.</p>
         <p class="admin-help">Τοπική αναβάθμιση μέσω Wi-Fi: <a href="http://192.168.1.77/recovery-update" target="_blank" rel="noopener">Άνοιγμα ESP8266 Recovery Upload</a> (Setup PIN). Μόνο εφόσον ο ESP εκκινεί και υπάρχει επιβεβαιωμένο .bin.</p>
-        <p class="admin-help">Το MQTT OTA δεν είναι ακόμη εγκεκριμένο. Η τοπική εγκατάσταση μέσω Recovery AP απαιτεί πρόσβαση Wi-Fi κοντά στη συσκευή.</p>
+        <p class="admin-help">Η δοκιμή απομακρυσμένου OTA έχει κίνδυνο χωρίς USB/rollback. Τοπική ανάκτηση μέσω Wi-Fi όταν ο ESP εκκινεί.</p>
       </section>
 
       <section class="settings-section ota-settings">
@@ -398,8 +398,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.72"></script>
-  <script src="app.js?v=5.72"></script>
+  <script src="history.js?v=5.73"></script>
+  <script src="app.js?v=5.73"></script>
 </body>
 </html>
 
