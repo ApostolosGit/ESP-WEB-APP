@@ -8,7 +8,8 @@
     `${BASE}/+/state`,
     `${BASE}/+/admin/response`,
     `${BASE}/+/admin/csv`,
-    `${BASE}/+/admin/history`
+    `${BASE}/+/admin/history`,
+    `${BASE}/+/vent/history`
   ];
 
   const DEFAULTS = {
@@ -17,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.64";
+  const APP_VERSION = "5.65";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -310,7 +311,8 @@
 
   function meterType(device) {
     const s = device.state || {};
-    const declared = String(s.meter || "").toUpperCase();
+    const declared = String(s.device_type || s.meter || device.health?.device_type || device.health?.meter || "").toUpperCase();
+    if (declared.includes("VENTILATION") || device.id.toLowerCase().startsWith("vent-")) return "VENTILATION";
     if (declared.includes("JSY")) return "JSY";
     if (declared.includes("DDS")) return "DDS";
     if (Object.prototype.hasOwnProperty.call(s, "v1") ||
@@ -322,11 +324,11 @@
   function meterName(device) {
     const s = device.state || {};
     if (s.meter) return String(s.meter);
-    return meterType(device) === "JSY" ? "JSY-MK-333" : "DDS238";
+    return meterType(device) === "VENTILATION" ? "Εξαερισμός" : (meterType(device) === "JSY" ? "JSY-MK-333" : "DDS238");
   }
 
   function meterPhaseType(device) {
-    return meterType(device) === "JSY" ? "Τριφασικό" : "Μονοφασικό";
+    return meterType(device) === "VENTILATION" ? "Εξαερισμός" : (meterType(device) === "JSY" ? "Τριφασικό" : "Μονοφασικό");
   }
 
   function deviceTitle(device) {
@@ -588,18 +590,49 @@
       ${renderTariffEnergy(s)}`;
   }
 
+  function renderVentilationBody(device) {
+    const s = device.state || {};
+    const shown = (v, unit="", digits=1) =>
+      v === null || v === undefined || v === "" || !Number.isFinite(Number(v))
+        ? "—" : `${escapeHtml(formatNumber(v, digits))} ${unit}`;
+    const sensorsOk = s.sensors_ok === true && device.health?.meter_ok !== false;
+    const fan = s.fan_on === true;
+    const manual = s.mode === "manual";
+    return `
+      <section class="vent-dashboard" aria-label="Κατάσταση εξαερισμού">
+        <div class="vent-headline">
+          <strong class="vent-fan ${fan ? "vent-running" : "vent-stopped"}">Ανεμιστήρας: ${fan ? "ΣΕ ΛΕΙΤΟΥΡΓΙΑ" : "ΣΤΑΜΑΤΗΜΕΝΟΣ"}</strong>
+          <span>${manual ? "MANUAL" : "AUTO"} · ${s.season === "summer" ? "Καλοκαίρι" : "Χειμώνας"} · ${s.speed === "high" ? "Υψηλή" : "Χαμηλή"} ταχύτητα</span>
+        </div>
+        ${!sensorsOk ? '<p class="measurement-notice" role="status">Προσοχή: σφάλμα αισθητήρων. Η αυτόματη λειτουργία ακολουθεί το fail-safe του ESP.</p>' : ""}
+        <div class="vent-measurements">
+          <div><span>Έξω (DS18B20)</span><b>${shown(s.temp_outside, "°C")}</b></div>
+          <div><span>Μέσα (DS18B20)</span><b>${shown(s.temp_inside, "°C")}</b></div>
+          <div><span>Ενδιάμεσα</span><b>${shown(s.temp_middle, "°C")}</b></div>
+          <div><span>Υγρασία έξω</span><b>${shown(s.humidity_outside, "%", 0)}</b></div>
+          <div><span>Υγρασία μέσα</span><b>${shown(s.humidity_inside, "%", 0)}</b></div>
+          <div><span>Έλεγχος 220V</span><b>${s.mains_present === true ? "Παρόν" : s.mains_present === false ? "Απόν" : "—"}</b></div>
+          <div><span>Διακόπτης RF</span><b>${s.rf_high === true ? "Υψηλή" : s.rf_high === false ? "Χαμηλή" : "—"}</b></div>
+          <div><span>Ώρα ESP</span><b>${escapeHtml(s.time || "—")}${s.time_synced === false ? " · χωρίς NTP" : ""}</b></div>
+        </div>
+        <p class="vent-schedule">Παύση AUTO: ${escapeHtml(s.stop_from || "—")} – ${escapeHtml(s.stop_to || "—")}</p>
+        <p class="admin-help">Χειρισμός μέσω ΡΥΘΜΙΣΕΙΣ. Οι εντολές MANUAL επηρεάζουν πραγματικό ανεμιστήρα.</p>
+      </section>`;
+  }
+
   function renderDevice(device) {
     const state = device.state || {};
     const sensorFailed = device.health?.read_attempted === true && device.health.meter_ok === false;
     const hasSample = device.sampleReceived === true;
+    const ventilation = meterType(device) === "VENTILATION";
     const body = device.responseTimedOut
         ? '<div class="meter-error"><strong>Ο ESP δεν απάντησε σε δύο αιτήματα ενημέρωσης.</strong><p>Δεν έχει επιβεβαιωθεί πρόσφατα η σύνδεσή του. Οι άλλες συσκευές συνεχίζουν ανεξάρτητα.</p></div>'
-      : sensorFailed
+      : sensorFailed && !ventilation
         ? `<div class="meter-error" role="status"><strong>Σφάλμα μετρητή ${escapeHtml(meterName(device))}</strong><p>Δεν λαμβάνονται έγκυρα δεδομένα από τον μετρητή. Έλεγξε τροφοδοσία, σύνδεση Modbus και διεύθυνση αισθητήρα. Ο ESP παραμένει συνδεδεμένος και επαναλαμβάνει τις αναγνώσεις.</p><p>${device.health.has_sample ? 'Υπάρχει προηγούμενη έγκυρη μέτρηση. Οι παλιές τιμές δεν εμφανίζονται ως τρέχουσες.' : 'Δεν έχει ληφθεί ακόμη έγκυρη μέτρηση.'}</p></div>`
       : device.stateError
         ? `<div class="meter-error"><strong>Μη έγκυρη ενημέρωση ${escapeHtml(device.id)}</strong><p>${escapeHtml(device.stateError)}</p></div>`
         : hasSample
-          ? (meterType(device) === "JSY" ? renderJsyBody(device) : renderDdsBody(device))
+          ? (ventilation ? renderVentilationBody(device) : (meterType(device) === "JSY" ? renderJsyBody(device) : renderDdsBody(device)))
           : '<div class="waiting-state">Ο ESP είναι online. Αναμονή για τις πρώτες μετρήσεις…</div>';
 
     const last = device.lastReceived
@@ -624,7 +657,7 @@
     }
 
     return `
-      <article class="device-panel" data-device="${escapeHtml(device.id)}">
+      <article class="device-panel ${ventilation ? "vent-device-panel" : ""}" data-device="${escapeHtml(device.id)}">
         <div class="device-head">
           <div class="device-title-wrap">
             <span class="dot ${sensorFailed || device.stateError || device.responseTimedOut || device.updateDelayed ? "dot-warn" : "dot-good"}"></span>
@@ -835,6 +868,7 @@
 
   function otaManifestMatchesDevice(manifest, device) {
     const type = meterType(device);
+    if (type === "VENTILATION" || !/^(DDS238|JSY-MK333|JSY-MK-333|JSY)$/i.test(manifest.meter)) return false;
     if (manifest.meter.includes("JSY") && type !== "JSY") return false;
     if (manifest.meter.includes("DDS") && type !== "DDS") return false;
     return true;
@@ -842,6 +876,7 @@
 
   function otaManifestUrlForDevice(device) {
     const type = meterType(device);
+    if (type === "VENTILATION") throw new Error("Το OTA του εξαερισμού παραμένει απενεργοποιημένο.");
     const file = type === "DDS" ? "manifest-dds.txt" : "manifest-jsy.txt";
     return OTA_MANIFEST_BASE_URL + file;
   }
@@ -859,6 +894,10 @@
 
   function renderOtaAvailability(device, manifest = null, checking = false, checkFailed = false) {
     if (!device || !ui.otaTargetInfo) return;
+    if (meterType(device) === "VENTILATION") {
+      ui.otaTargetInfo.textContent = "VENTILATION: το απομακρυσμένο OTA είναι κλειδωμένο μέχρι να δοκιμαστεί στο ESP8266. Χρησιμοποίησε μόνο τοπικό OTA/Recovery AP.";
+      return;
+    }
     const currentFw = String((device.state || {}).firmware || "?");
     const parts = [
       `<span class="ota-current-line">Τρέχον firmware: <b>${escapeHtml(currentFw)}</b></span>`
@@ -890,7 +929,7 @@
 
   async function refreshOtaAvailability(id) {
     const device = devices.get(id);
-    if (!device) return;
+    if (!device || meterType(device) === "VENTILATION") return;
     renderOtaAvailability(device, null, true);
 
     try {
@@ -1095,6 +1134,11 @@
 
   function sendPendingRemoteOta() {
     const id = otaTargetId;
+    if (id && meterType(devices.get(id) || {id,state:{}}) === "VENTILATION") {
+      otaTargetId = null; otaPendingManifest = null;
+      setAdminStatus("Αποκλείστηκε μη δοκιμασμένο OTA εξαερισμού.", "error");
+      return;
+    }
     const manifest = otaPendingManifest;
 
     otaTargetId = null;
@@ -1163,6 +1207,10 @@
 
   async function startRemoteOta(id) {
     const device = devices.get(id);
+    if (device && meterType(device) === "VENTILATION") {
+      setAdminStatus("Το OTA εξαερισμού παραμένει κλειδωμένο μέχρι την επιτόπια δοκιμή.", "error");
+      return;
+    }
     if (!device) {
       showToast("Η συσκευή δεν είναι πλέον διαθέσιμη.");
       return;
@@ -1518,7 +1566,7 @@
       const fwForOta = String(state.firmware || "");
       ui.otaUpdateBtn.disabled =
         !adminTargetId || busy || !connected || otaManifestLoading ||
-        !firmwareAtLeast(fwForOta, 2, 29);
+        meterType(device) === "VENTILATION" || !firmwareAtLeast(fwForOta, 2, 29);
     }
     if (ui.restartEspBtn) {
       ui.restartEspBtn.disabled =
@@ -2104,6 +2152,7 @@
   }
   function openEnergyHistory(id) {
     const device=devices.get(id);
+    if (device && meterType(device) === "VENTILATION") { openVentHistory(id); return; }
     if(!device || compareFirmwareVersions(String(device.state?.firmware||'0'),'5.00')<0) { showToast('Τα γραφήματα απαιτούν firmware V5.00.'); return; }
     if(!historyDialog.open) historyDialog.showModal();
     loadEnergyHistory(id);
@@ -2328,7 +2377,7 @@
     if (device.health?.chip_id && health.chip_id && device.health.chip_id !== health.chip_id)
       showToast(`Πιθανή σύγκρουση DEVICE_ID ${device.id}: διαφορετικοί ESP χρησιμοποιούν το ίδιο ID.`, 8000);
     device.health = health;
-    device.state = { ...(device.state || {}), meter:health.meter, firmware:health.firmware, rssi:health.rssi, dual_zone:health.dual_zone };
+    device.state = { ...(device.state || {}), meter:health.meter, device_type:health.device_type || health.meter, firmware:health.firmware, rssi:health.rssi, dual_zone:health.dual_zone };
     if (retained) {
       if (device.statusOnline !== false) queueDeviceProbe(device);
     } else {
@@ -2360,7 +2409,7 @@
       device.stateError = "";
       device.sampleReceived = true;
       device.lastReceived = new Date();
-      if (device.health) device.health = {...device.health, meter_ok:true, read_attempted:true, has_sample:true};
+      if (device.health) device.health = {...device.health, meter_ok:state.sensors_ok === false ? false : true, read_attempted:true, has_sample:true};
     } catch (error) {
       device.stateError = "Η απάντηση μετρήσεων δεν είναι έγκυρο αντικείμενο JSON. Αναμονή νέας ενημέρωσης.";
       console.warn("Invalid meter JSON", device.id, error);
@@ -2632,6 +2681,11 @@
           console.error("Invalid meter JSON", parsed.id, text, err);
           showToast(`${parsed.id}: μη έγκυρο JSON`);
         }
+        return;
+      }
+
+      if (parsed.suffix === "vent/history") {
+        handleVentHistory(parsed.id, text);
         return;
       }
 
@@ -2950,7 +3004,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.64", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.65", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
