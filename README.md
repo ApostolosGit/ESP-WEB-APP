@@ -1,4 +1,13 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.65
+# Energy DDS / JSY / Ventilation — MQTT.app v5.66
+
+## Νέο στην 5.66 — ασφαλής μετάβαση εξαερισμού v1.01
+
+- Ο εξαερισμός v1.00 έχει αναφερθεί ότι χρησιμοποιεί **αντίστροφη φυσική πολικότητα** στα ρελέ: ON → OFF και HIGH → αργά. Το v1.01 διορθώνει τις στάθμες του GPIO12/13 (HIGH=ON, HIGH=γρήγορα) σύμφωνα με πραγματική παρατήρηση του χρήστη. Τα κουμπιά της PWA **κλειδώνουν μέχρι η συσκευή να δηλώσει firmware v1.01+**.
+- Το `Set Time` εμφανίζεται και επιτρέπεται **μόνο όταν `time_synced` δεν είναι true**. Το firmware v1.01 αρνείται χειροκίνητη ώρα μετά τον συγχρονισμό NTP.
+- Η τοπική web σελίδα v1.01 έχει χειρισμούς χωρίς HTTP Basic login (ζητήθηκε λόγω ιδιωτικού LAN), αλλά το **Setup PIN και το OTA Recovery Upload παραμένουν προστατευμένα**.
+- Αν η PWA δεν βρίσκει τον εξαερισμό, άνοιξε από τον ίδιο router το [τοπικό `/mqtt-status`](http://192.168.1.77/mqtt-status) (διαθέσιμο από v1.01). Η ένδειξη `mqtt_connected` επιβεβαιώνει αν ο ESP έχει συνδεθεί στον broker· η PWA δεν μπορεί να κάνει αυτόματα discovery μόνο από την τοπική ιστοσελίδα.
+- Υπάρχει σύνδεσμος για [τοπικό HTTP Recovery OTA](http://192.168.1.77/recovery-update) με Setup PIN. Είναι **ρητή ενέργεια** που χρειάζεται πρόσβαση στο τοπικό LAN. Το MQTT HTTPS OTA εξαερισμού παραμένει κλειδωμένο.
+- Ο νέος κώδικας και το compiled δοκιμαστικό binary δημοσιεύτηκαν ξεχωριστά: [Ventilation_ESP8266_V1_01.ino](https://github.com/ApostolosGit/ESP8266-Ventilation/blob/main/Ventilation_ESP8266_V1_01.ino), [ιδιωτικό test.4 Release](https://github.com/ApostolosGit/ESP8266-Ventilation/releases/tag/ventilation-v1.01-test.4). Η v1.00 και τα προηγούμενα `.bin` διατηρούνται. **Compile OK δεν σημαίνει δοκιμασμένο σε hardware**.
 
 ## Νέο στην 5.65 · ESP8266 Ventilation
 
