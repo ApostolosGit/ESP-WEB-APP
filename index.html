@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1320">
-  <meta name="description" content="Energy DDS / JSY dashboard μέσω HiveMQ MQTT WebSocket">
+  <meta name="description" content="Energy DDS / JSY / Ventilation dashboard μέσω HiveMQ MQTT WebSocket">
   <title>Energy DDS / JSY</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.64">
+  <link rel="stylesheet" href="style.css?v=5.65">
 </head>
 <body>
   <div class="app-shell">
@@ -56,7 +56,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.64</span>
+      <span>MQTT.app. v5.65</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -148,6 +148,33 @@
 
         <button id="startUtilityReadingBtn" class="primary-btn admin-btn full-btn" type="button">ΚΑΤΑΧΩΡΗΣΗ</button>
         <button id="utilityHistoryBtn" class="secondary-btn admin-btn full-btn" type="button">ΠΙΝΑΚΑΣ ΜΕΤΡΗΣΕΩΝ</button>
+      </section>
+
+      <section id="ventilationSettings" class="settings-section ventilation-settings hidden">
+        <p class="eyebrow">ΕΞΑΕΡΙΣΜΟΣ · ESP8266 v1.00</p>
+        <h3>Τοπική λειτουργία / απομακρυσμένες εντολές MQTT</h3>
+        <p id="ventLiveInfo" class="admin-help">Αναμονή κατάστασης εξαερισμού…</p>
+        <div class="vent-control-grid">
+          <button type="button" data-vent-command="vent_mode|auto" class="secondary-btn">AUTO</button>
+          <button type="button" data-vent-command="vent_mode|manual" class="secondary-btn">MANUAL</button>
+          <button type="button" data-vent-command="vent_season|summer" class="secondary-btn">ΚΑΛΟΚΑΙΡΙ</button>
+          <button type="button" data-vent-command="vent_season|winter" class="secondary-btn">ΧΕΙΜΩΝΑΣ</button>
+          <button type="button" data-vent-command="vent_fan|on" class="primary-btn">ΑΝΕΜΙΣΤΗΡΑΣ ON</button>
+          <button type="button" data-vent-command="vent_fan|off" class="secondary-btn">ΑΝΕΜΙΣΤΗΡΑΣ OFF</button>
+          <button type="button" data-vent-command="vent_speed|high" class="secondary-btn">ΥΨΗΛΗ ΤΑΧΥΤΗΤΑ</button>
+          <button type="button" data-vent-command="vent_speed|low" class="secondary-btn">ΧΑΜΗΛΗ ΤΑΧΥΤΗΤΑ</button>
+        </div>
+        <p class="admin-help">Το ON/OFF και η ταχύτητα επιτρέπονται μόνο σε MANUAL. Επιβεβαίωσε πριν ενεργοποιήσεις τον ανεμιστήρα.</p>
+        <div class="vent-field-grid">
+          <label>Έναρξη παύσης <input id="ventPauseFrom" type="time" value="06:15" step="60"></label>
+          <label>Τέλος παύσης <input id="ventPauseTo" type="time" value="08:30" step="60"></label>
+        </div>
+        <button id="saveVentScheduleBtn" type="button" class="secondary-btn full-btn">ΑΠΟΘΗΚΕΥΣΗ ΠΑΥΣΗΣ</button>
+        <div class="vent-field-grid">
+          <label>Ώρα ESP (HH:MM:SS) <input id="ventClockInput" type="time" step="1" value="12:00:00"></label>
+        </div>
+        <button id="saveVentTimeBtn" type="button" class="secondary-btn full-btn">ΡΥΘΜΙΣΗ ΩΡΑΣ</button>
+        <p class="admin-help">Το MQTT OTA εξαερισμού παραμένει απενεργοποιημένο. Αν δεν υπάρχει φυσική πρόσβαση μέσω USB, προτίμησε επιβεβαιωμένη σύνδεση στο Recovery AP για δοκιμές.</p>
       </section>
 
       <section class="settings-section ota-settings">
@@ -347,11 +374,26 @@
     </div>
   </dialog>
 
+  <dialog id="ventHistoryDialog" class="vent-history-dialog">
+    <div class="admin-dialog-body">
+      <div class="dialog-head"><div><p class="eyebrow">VENTILATION</p><h2>Ιστορικό θερμοκρασίας</h2></div>
+        <button id="closeVentHistoryBtn" class="icon-btn light" type="button" aria-label="Κλείσιμο">×</button></div>
+      <div class="vent-history-switches">
+        <button id="ventHistoryCurrentBtn" type="button" class="secondary-btn">ΣΗΜΕΡΑ</button>
+        <button id="ventHistoryPreviousBtn" type="button" class="secondary-btn">ΧΘΕΣ</button>
+      </div>
+      <p id="ventHistoryStatus" class="admin-help" role="status">Αναμονή λήψης…</p>
+      <div id="ventHistoryChart" class="vent-chart-scroll" aria-live="polite"></div>
+      <div id="ventHistoryTable" class="vent-history-table"></div>
+      <p class="admin-help">Μέσοι όροι ανά 15 λεπτά · Θερμοκρασία μέσα και έξω (DS18B20).</p>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.64"></script>
-  <script src="app.js?v=5.64"></script>
+  <script src="history.js?v=5.65"></script>
+  <script src="app.js?v=5.65"></script>
 </body>
 </html>
 
