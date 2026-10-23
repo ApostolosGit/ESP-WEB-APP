@@ -1,4 +1,17 @@
-# Energy DDS / JSY — MQTT.app v5.64
+# Energy DDS / JSY / Ventilation — MQTT.app v5.65
+
+## Νέο στην 5.65 · ESP8266 Ventilation
+
+Το MQTT.app αναγνωρίζει πλέον `VENTILATION` από τα πεδία `meter` / `device_type` των topics `home/energy/<id>/health` και `home/energy/<id>/state`. Τα IDs `vent-<MAC>` αναγνωρίζονται επίσης ως εξαερισμός, ώστε να μη γίνεται λανθασμένη ταξινόμηση ως DDS238.
+
+- **Ανεξάρτητη κάρτα** με 3 θερμοκρασίες DS18B20, 2 υγρασίες DHT11, κατάσταση ανεμιστήρα, ταχύτητα, AUTO/MANUAL, WINTER/SUMMER, παύση, έλεγχο 220 V, RF switch και ώρα του ESP.
+- **Ρυθμίσεις Ventilation** μέσω των ήδη χρησιμοποιούμενων HiveMQ topics `home/energy/<id>/admin/request` και `admin/response`. Επιτρέπονται οι εντολές `vent_mode|auto/manual`, `vent_fan|on/off`, `vent_speed|high/low`, `vent_season|summer/winter`, `vent_schedule|HH:MM|HH:MM`, `vent_time|HH:MM:SS`. Τα FAN/SPEED απαιτούν MANUAL και επικίνδυνες αλλαγές ζητούν ρητή επιβεβαίωση. Το app περιμένει πραγματικό ACK και ανανέωση state από το ESP.
+- **Γραφήματα θερμοκρασίας για σήμερα / χθες** σε 96 δεκαπεντάλεπτα. Τα δεδομένα φτάνουν στο `home/energy/<id>/vent/history` ως 12 μηνύματα `R|range|offset|inside,outside|...` και ένα τελικό `E|range`. Ο renderer απορρίπτει κακοσχηματισμένα frames και εμφανίζει ελλιπείς λήψεις ως ελλιπείς.
+- **Αυστηρός αποκλεισμός OTA για Ventilation.** Κανένα DDS238 ή JSY manifest/binary δεν επιτρέπεται να σταλεί σε Ventilation. Το απομακρυσμένο MQTT HTTPS OTA εξαερισμού **παραμένει απενεργοποιημένο**, επειδή το ESP8266 v1.00 δεν έχει ακόμη δοκιμαστεί στο εγκατεστημένο hardware και δεν υπάρχει αυτόματο rollback. Δεν υπάρχει `manifest-ventilation.txt` παραγωγής.
+- Η λειτουργία DDS238/JSY, τα υπάρχοντα οικονομικά στοιχεία/μετρήσεις ΔΕΗ και το δικό τους OTA παραμένουν ανεξάρτητα από τα Ventilation controls.
+- Το `tests/test_ventilation.mjs` καλύπτει discovery, rendering, εγκυρότητα εντολών, αποκλεισμό OTA, λήψη ιστορικού και κακοσχηματισμένα frames.
+
+**Διάκριση δοκιμών:** Η δημοσίευση του app και τα mock MQTT tests **δεν** αποτελούν επιβεβαίωση της συμπεριφοράς του πραγματικού εξαερισμού. Πριν από τη χρήση των εντολών σε ενεργό φορτίο, πρέπει να επιβεβαιωθεί το firmware και η αντιστοίχιση GPIO/ρελέ σε πραγματικές συνθήκες. Διατηρείται η έκδοση firmware **1.00** στο ξεχωριστό `ApostolosGit/ESP8266-Ventilation`.
 
 ## Νέο στην 5.64 · αυτόματη σύνδεση στη συσκευή
 
