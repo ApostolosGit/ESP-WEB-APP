@@ -1392,3 +1392,33 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
   line-height: 1.5;
 }
 
+
+
+/* Ventilation dashboard v5.65 */
+.vent-device-panel { border-color: color-mix(in srgb, var(--accent, #2563eb) 32%, transparent); }
+.vent-dashboard { padding: 12px 4px 4px; }
+.vent-headline { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.vent-headline > span { font-size: .94rem; opacity: .87; }
+.vent-fan { border-radius: 8px; padding: 8px 11px; font-size: .94rem; }
+.vent-running { background: #14532d; color: #fff; }
+.vent-stopped { background: #374151; color: #fff; }
+.vent-measurements { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; }
+.vent-measurements > div { display: flex; flex-direction: column; gap: 5px; padding: 11px; border: 1px solid var(--line, #8893a55a); border-radius: 10px; }
+.vent-measurements span { font-size: .84rem; opacity: .82; }
+.vent-measurements b { font-size: 1.12rem; }
+.vent-schedule { font-size: .9rem; margin: 12px 0; }
+.vent-control-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin: 10px 0; }
+.vent-control-grid button { min-width: 0; min-height: 44px; white-space: normal; }
+.vent-field-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 10px; margin: 12px 0 8px; }
+.vent-field-grid label { display: block; font-size: .9rem; }
+.vent-field-grid input { display: block; box-sizing: border-box; width: 100%; min-height: 40px; margin-top: 6px; padding: 7px 9px; border-radius: 8px; border: 1px solid #8d95a3; background: var(--surface, #fff); color: var(--text, #111827); }
+.vent-history-dialog { width: min(94vw, 990px); max-height: 92vh; overflow-y: auto; }
+.vent-history-switches { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.vent-chart-scroll { max-width: 100%; overflow-x: auto; padding: 10px 0; }
+.vent-chart-scroll svg { max-width: none; }
+.vent-history-table-scroll { max-height: 340px; overflow: auto; margin: 10px 0; }
+.vent-history-table table { width: 100%; border-collapse: collapse; }
+.vent-history-table th, .vent-history-table td { padding: 5px 10px; text-align: right; border-bottom: 1px solid #9ca3af44; }
+.vent-history-table th:first-child, .vent-history-table td:first-child { text-align: left; }
+.vent-history-table summary { cursor: pointer; padding: 10px 2px; }
+@media(max-width:450px) { .vent-control-grid { grid-template-columns: 1fr 1fr; } .vent-measurements { grid-template-columns: repeat(2,minmax(0,1fr)); } }
