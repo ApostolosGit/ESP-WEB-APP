@@ -1,4 +1,12 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.67
+# Energy DDS / JSY / Ventilation — MQTT.app v5.68
+
+## Νέο στην 5.68 — MQTT OTA Ventilation 1.04+
+
+- Το κουμπί MQTT OTA **ενεργοποιείται μόνο** σε Ventilation που αναφέρει firmware 1.04 ή νεότερο. Το πρώτο flash από 1.03 προς 1.04 γίνεται τοπικά με [το προστατευμένο Recovery upload](http://192.168.1.77/recovery-update).
+- Το APP ελέγχει πλέον το ξεχωριστό `manifest-ventilation.txt` στο `ApostolosGit/ESP8266-OTA` και αποδέχεται **μόνο** `meter=VENTILATION` και filenames `Ventilation_ESP8266_VX_YY.bin`. Δεν επιτρέπεται να σταλεί DDS/JSY firmware σε Ventilation.
+- Επιτρέπεται μόνο **νεότερη** έκδοση: όχι downgrade, όχι επαναflash ίδιας. Χρειάζονται επιβεβαίωση, συμπλήρωση PIN και ενεργό HiveMQ. Η εντολή προς το Ventilation περιλαμβάνει επιπλέον το PIN, ενώ τα προϋπάρχοντα DDS/JSY OTA commands παραμένουν ίδια.
+- Ο δημόσιος OTA server δεν έχει ακόμη `manifest-ventilation.txt` ή firmware Ventilation. Το APP το παρουσιάζει ως **«δεν υπάρχει δημοσιευμένη νεότερη έκδοση»**, όχι ως σφάλμα της συσκευής. Θα δημοσιεύσουμε την επόμενη έκδοση μόνο αφού δοκιμαστεί στο πραγματικό hardware.
+- Το compiled v1.04 firmware βρίσκεται [εδώ, στο ιδιωτικό firmware repository](https://github.com/ApostolosGit/ESP8266-Ventilation/blob/main/test-binaries/Ventilation_ESP8266_V1_04_TEST_ONLY.bin). Η απουσία USB και μηχανισμού rollback παραμένει σοβαρός κίνδυνος σε περίπτωση προβλήματος boot. Η προστασία PIN του web APP δεν ισοδυναμεί με υπογραφή firmware ή αμοιβαία πιστοποίηση TLS.
 
 ## Νέο στην 5.67 — χειρισμός εξαερισμού 1.03 και κατάσταση κουμπιών
 
