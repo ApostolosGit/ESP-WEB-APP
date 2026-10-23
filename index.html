@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.68">
+  <link rel="stylesheet" href="style.css?v=5.69">
 </head>
 <body>
   <div class="app-shell">
@@ -47,7 +47,7 @@
     </section>
 
     <main>
-      <section id="emptyState" class="empty-state">
+      <section id="emptyState" class="empty-state hidden">
         <strong>Δεν υπάρχει online συσκευή.</strong>
         <span>Συνδέσου στο HiveMQ και η εφαρμογή θα εμφανίσει αυτόματα DDS238, JSY-MK-333 και VENTILATION που επικοινωνούν με τον ίδιο MQTT broker.</span>
         <p>Αν ο εξαερισμός λειτουργεί τοπικά αλλά δεν εμφανίζεται εδώ, άνοιξε το <a href="http://192.168.1.77/mqtt-status" target="_blank" rel="noopener">διαγνωστικό MQTT του ESP8266 (v1.01+)</a> από το ίδιο LAN. Χρειάζεται <code>mqtt_connected: true</code> και ίδιο HiveMQ με το app.</p>
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.68</span>
+      <span>MQTT.app. v5.69</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -398,8 +398,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.68"></script>
-  <script src="app.js?v=5.68"></script>
+  <script src="history.js?v=5.69"></script>
+  <script src="app.js?v=5.69"></script>
 </body>
 </html>
 
