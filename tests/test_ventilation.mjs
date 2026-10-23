@@ -54,10 +54,15 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.72'));
-assert(appSource.includes('const APP_VERSION = "5.72"'));
+assert(html.includes('v=5.73'));
+assert(appSource.includes('const APP_VERSION = "5.73"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
+assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
+  "Post-ACK OTA failure must terminate active OTA progress");
+assert(appSource.includes("low_heap_preflight"),
+  "Firmware TLS heap failure must have a user-facing message");
+
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
 assert(appSource.includes('startRemoteOta(id)'));
 assert(html.includes('id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button" disabled'),
