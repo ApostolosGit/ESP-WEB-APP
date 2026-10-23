@@ -1822,7 +1822,7 @@
         if(!Number.isInteger(key)||key<0||key>80000)return;
         const vals=a.slice(1).map(raw=>{
           if(raw==="null")return null;
-          if(!/^-?\\d+(?:\\.\\d+)?$/.test(raw))return NaN;
+          if(!/^-?\d+(?:\.\d+)?$/.test(raw))return NaN;
           const n=Number(raw);
           return Number.isFinite(n)&&n>=-55&&n<=125?n:NaN;
         });
