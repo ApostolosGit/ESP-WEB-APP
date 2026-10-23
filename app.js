@@ -862,7 +862,7 @@
   function otaManifestMatchesDevice(manifest, device) {
     const type = meterType(device);
     if (type === "VENTILATION") {
-      const match = /^Ventilation_ESP8266_V(\\d+)_(\\d{2})\\.bin$/.exec(manifest.file);
+      const match = /^Ventilation_ESP8266_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
       return manifest.meter === "VENTILATION" && Boolean(match) &&
         manifest.version === `${Number(match?.[1])}.${match?.[2]}`;
     }
