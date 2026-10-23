@@ -941,7 +941,9 @@
       renderOtaAvailability(device, manifest, false);
     } catch (_) {
       if (adminTargetId !== id) return;
-      renderOtaAvailability(device, null, false, true);
+      if (meterType(device) === "VENTILATION") {
+        ui.otaTargetInfo.textContent = "Ventilation OTA ενεργό από firmware 1.04 — δεν υπάρχει ακόμη δημοσιευμένη νεότερη έκδοση στο δημόσιο ESP8266-OTA.";
+      } else renderOtaAvailability(device, null, false, true);
     }
   }
 
