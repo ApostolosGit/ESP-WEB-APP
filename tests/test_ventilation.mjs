@@ -7,7 +7,7 @@ const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const nodes = new Map(), timers = new Map(), clients = [];
 let idClock = 0, confirms = 0;
 const addIds = (markup) => {
-  for (const found of String(markup).matchAll(/\\bid="([^"]+)"/g))
+  for (const found of String(markup).matchAll(/\bid="([^"]+)"/g))
     if (!nodes.has(found[1])) nodes.set(found[1], makeNode());
 };
 function makeNode() {
@@ -42,7 +42,7 @@ const ctx={
   };clients.push(c);return c;}}
 };
 vm.createContext(ctx);
-const patched=appSource.replace(/\\}\\)\\(\\);\\s*$/, "globalThis.vtest={devices,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
+const patched=appSource.replace(/\}\)\(\);\s*$/, "globalThis.vtest={devices,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
 assert.notEqual(patched,appSource,"app test bridge");
 vm.runInContext(patched,ctx);
 
@@ -61,13 +61,13 @@ assert(appSource.includes('meterType(device) === "VENTILATION"'));
 assert(appSource.includes('startRemoteOta(id)'));
 
 // Open a real MQTT connection using the same mocked client API as the production app.
-const start=appSource.replace(/\\}\\)\\(\\);\\s*$/, "globalThis.vtest={devices,connect,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
+const start=appSource.replace(/\}\)\(\);\s*$/, "globalThis.vtest={devices,connect,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
 assert(start.includes("globalThis.vtest"));
 const ctx2={...ctx};
 const doc2=new Map();
 function buildContext(){
   const nodeMap=new Map(), published=[];
-  const defineIds=markup=>{for(const m of String(markup).matchAll(/\\bid="([^"]+)"/g))if(!nodeMap.has(m[1]))nodeMap.set(m[1],mockNode());};
+  const defineIds=markup=>{for(const m of String(markup).matchAll(/\bid="([^"]+)"/g))if(!nodeMap.has(m[1]))nodeMap.set(m[1],mockNode());};
   function mockNode(){return {innerHTML:"",textContent:"",value:"",open:false,disabled:false,checked:false,handlers:new Map(),dataset:{},
     classList:{add(){},remove(){},toggle(){},contains(){return false;}},
     addEventListener(k,fn){this.handlers.set(k,fn);},insertAdjacentElement(_,n){defineIds(n.innerHTML);},
