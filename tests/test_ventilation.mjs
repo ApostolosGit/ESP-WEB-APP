@@ -54,15 +54,21 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.71'));
-assert(appSource.includes('const APP_VERSION = "5.71"'));
+assert(html.includes('v=5.72'));
+assert(appSource.includes('const APP_VERSION = "5.72"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
 assert(appSource.includes('startRemoteOta(id)'));
+assert(html.includes('id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button" disabled'),
+  "OTA button must start disabled");
+assert(appSource.includes('ventilationOtaAvailable.get(device.id)'),
+  "Ventilation OTA disabled until matching newer public manifest");
+assert(appSource.includes("manifest-ventilation.txt"));
+
 
 // Open a real MQTT connection using the same mocked client API as the production app.
-const start=appSource.replace(/\}\)\(\);\s*$/, "globalThis.vtest={devices,connect,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,getHistory:()=>ventHistorySession};})();");
+const start=appSource.replace(/\}\)\(\);\s*$/, "globalThis.vtest={devices,connect,meterType,otaManifestMatchesDevice,otaManifestUrlForDevice,startRemoteOta,sendVentCommand,openVentHistory,requestVentHistory,handleVentHistory,renderOtaAvailability,updateAdminButtons,selectOtaDevice:(id)=>{adminTargetId=id;},getHistory:()=>ventHistorySession};})();");
 assert(start.includes("globalThis.vtest"));
 const ctx2={...ctx};
 const doc2=new Map();
@@ -120,6 +126,24 @@ assert(b.nodes.get("emptyState").classList.contains("hidden"),"Hide no-device no
 b.message(vid,"health",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.03",meter_ok:true,read_attempted:true,has_sample:true,rssi:-45,chip_id:123});
 b.message(vid,"state",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.03",temp_inside:21.3,temp_outside:15.2,temp_middle:19.1,humidity_inside:60,humidity_outside:45,fan_on:false,speed:"low",mode:"auto",season:"winter",stop_from:"06:15",stop_to:"08:30",sensors_ok:true,time:"10:30:00",mains_present:true,rf_high:false,time_synced:false});
 assert.equal(b.app.meterType(b.app.devices.get(vid)),"VENTILATION");
+b.app.selectOtaDevice(vid);
+b.app.renderOtaAvailability(b.app.devices.get(vid), null, true);
+assert(b.nodes.get("otaUpdateBtn").disabled,
+  "OTA must remain disabled while checking manifest");
+b.app.renderOtaAvailability(b.app.devices.get(vid), null, false, true);
+assert(b.nodes.get("otaUpdateBtn").disabled,
+  "OTA must remain disabled when manifest is unavailable");
+b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.04"});
+b.app.renderOtaAvailability(b.app.devices.get(vid), {
+  meter:"VENTILATION",version:"1.05",file:"Ventilation_ESP8266_V1_05.bin"
+});
+assert.equal(b.nodes.get("otaUpdateBtn").disabled,false,
+  "Only a newer, matching Ventilation manifest can unlock OTA");
+b.app.renderOtaAvailability(b.app.devices.get(vid),null,false,true);
+assert(b.nodes.get("otaUpdateBtn").disabled,
+  "Manifest becoming unavailable must lock OTA again");
+b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.03"});
+
 const card=b.nodes.get("devicesGrid").innerHTML;
 assert(card.includes("21,3") && card.includes("Διακόπτης RF") && card.includes("Ώρα ESP") && card.includes("Παύση λειτουργίας"));
 assert(!card.includes("Έλεγχος 220V"));
