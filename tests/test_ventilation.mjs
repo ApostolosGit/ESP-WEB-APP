@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.73'));
-assert(appSource.includes('const APP_VERSION = "5.73"'));
+assert(html.includes('v=5.74'));
+assert(appSource.includes('const APP_VERSION = "5.74"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
@@ -229,9 +229,11 @@ assert(plotted.includes(">00</text>") && plotted.includes(">01</text>") &&
        plotted.includes(">23</text>"), "Use short hour numbers, not HH:MM");
 assert(!plotted.includes(">24</text>") && !plotted.includes(">23:00</text>"),
   "No 24 label or time suffix");
-assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,23,
+assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,24,
   "Draw grid every half-degree within the observed temperature span");
-assert(plotted.includes("25,25°C"),"Top axis text follows observed maximum");
+assert(plotted.includes('data-axis-min="14"') && plotted.includes('data-axis-max="25.5"'),
+  "Round actual observed extremes to exterior 0.5C axis ticks");
+assert(plotted.includes("25,5°C"),"Top Y tick follows the 0.5C axis grid");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
 assert.equal(b.app.requestVentHistory(vid,"previous"),true);
 assert(b.published.some(x=>x.payload==="vent_history|previous"));
@@ -248,4 +250,32 @@ b.message(vid,"vent/history","E|previous");
 const flatChart=b.nodes.get("ventHistoryChart").innerHTML;
 assert(flatChart.includes('data-min-temp="18.5"') && flatChart.includes('data-max-temp="18.5"'));
 assert(!flatChart.includes("NaN"),"Flat temperature must not yield NaN coordinates");
+assert(flatChart.includes('data-axis-min="18"') && flatChart.includes('data-axis-max="19"'),
+  "Flat measurements get a safe half-degree-padded Y scale");
+// 48-hour comparison: 12 frames for today, followed by 12 for yesterday.
+b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.07"});
+assert.equal(b.app.requestVentHistory(vid,"compare"),true);
+for(const range of ["current","previous"]){
+  for(let offset=0;offset<96;offset+=8){
+    b.message(vid,"vent/history",
+      `R|${range}|${offset}|${Array(8).fill(range==="current"?"21.5,17.0":"20.0,16.0").join("|")}`);
+  }
+  b.message(vid,"vent/history",`E|${range}`);
+}
+assert.equal(b.app.getHistory().complete,true,"48-hour aggregate completed");
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-yesterday"/g)||[]).length,2,
+  "Yesterday is a dashed red and dashed blue line in the same graph");
+assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα χθες °C"));
+// 30-day daily aggregates: 10 packets * 3 records, with no invented history.
+assert.equal(b.app.requestVentHistory(vid,"days30"),true);
+const day=(i)=>`${50500-i},14.5,23.0,19.2,12.0,20.0,16.1`;
+for(let offset=0;offset<30;offset+=3){
+  b.message(vid,"vent/history",`D|${offset}|${day(offset)}|${day(offset+1)}|${day(offset+2)}`);
+}
+b.message(vid,"vent/history","E|days30");
+assert(b.app.getHistory().complete,"30-day data complete");
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-daily-series"/g)||[]).length,6,
+  "Six min/max/average daily lines");
+assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα μέση °C"));
+
 console.log("Ventilation v1.03 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
