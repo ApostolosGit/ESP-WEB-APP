@@ -1478,6 +1478,64 @@
     return true;
   }
 
+  function refreshVentControls(device) {
+    const vent = Boolean(device && meterType(device) === "VENTILATION");
+    ui.utilityReadingSettings.classList.toggle("hidden", vent);
+    $("dualZoneSettings")?.classList.toggle("hidden", vent);
+    $("ventilationSettings")?.classList.toggle("hidden", !vent);
+    if (!vent) return;
+    const state = device.state || {};
+    const connected = Boolean(client?.connected && device.online);
+    const busy = adminBusy.has(device.id);
+    const manual = state.mode === "manual";
+    const known = device.sampleReceived === true && (state.mode === "auto" || manual);
+    const text = !known ? "Αναμονή έγκυρης κατάστασης ESP8266." :
+      `${manual ? "MANUAL" : "AUTO"} · ${state.fan_on ? "Ανεμιστήρας ON" : "Ανεμιστήρας OFF"} · ${state.season === "summer" ? "Καλοκαίρι" : "Χειμώνας"} · ${state.speed === "high" ? "Υψηλή" : "Χαμηλή"} ταχύτητα`;
+    $("ventLiveInfo").textContent = text;
+    if (known && !busy) {
+      if (/^\\d{2}:\\d{2}$/.test(state.stop_from || "")) $("ventPauseFrom").value = state.stop_from;
+      if (/^\\d{2}:\\d{2}$/.test(state.stop_to || "")) $("ventPauseTo").value = state.stop_to;
+      if (/^\\d{2}:\\d{2}:\\d{2}$/.test(state.time || "")) $("ventClockInput").value = state.time;
+    }
+    for (const btn of $("ventilationSettings").querySelectorAll?.("[data-vent-command]") || []) {
+      const cmd = btn.dataset.ventCommand || "";
+      const needsManual = cmd.startsWith("vent_fan|") || cmd.startsWith("vent_speed|");
+      btn.disabled = !connected || busy || !known || (needsManual && !manual);
+    }
+    $("saveVentScheduleBtn").disabled = !connected || busy || !known;
+    $("saveVentTimeBtn").disabled = !connected || busy || !known;
+  }
+
+  function sendVentCommand(id, command) {
+    const device = devices.get(id);
+    if (!device || meterType(device) !== "VENTILATION" || !client?.connected ||
+        !device.online || adminBusy.has(id) || !device.sampleReceived) return false;
+    const allowed = new Set([
+      "vent_mode|auto","vent_mode|manual",
+      "vent_fan|on","vent_fan|off",
+      "vent_speed|high","vent_speed|low",
+      "vent_season|summer","vent_season|winter"
+    ]);
+    if (!allowed.has(command) &&
+        !/^vent_schedule\\|(?:[01]\\d|2[0-3]):[0-5]\\d\\|(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(command) &&
+        !/^vent_time\\|(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(command)) {
+      setAdminStatus("Μη επιτρεπτή εντολή εξαερισμού.", "error");
+      return false;
+    }
+    const manual = device.state?.mode === "manual";
+    if ((command.startsWith("vent_fan|") || command.startsWith("vent_speed|")) && !manual) {
+      setAdminStatus("Ο ανεμιστήρας και η ταχύτητα ελέγχονται χειροκίνητα μόνο σε MANUAL.", "error");
+      return false;
+    }
+    if ((command === "vent_fan|on" || command === "vent_mode|manual" ||
+         command.startsWith("vent_season|") || command.startsWith("vent_schedule|")) &&
+        !window.confirm(`Αποστολή εντολής στον πραγματικό εξαερισμό ${id};\\n\\n${command}\\n\\nΕπιβεβαίωσε ότι η εγκατάσταση μπορεί να λειτουργήσει με ασφάλεια.`)) return false;
+    adminTargetId = id;
+    sendAdmin(command, `Αποστολή: ${command}…`);
+    refreshVentControls(device);
+    return true;
+  }
+
   function openAdmin(id) {
     const device = devices.get(id);
     if (!device) return;
@@ -1490,12 +1548,15 @@
     ui.adminEyebrow.textContent = `${meterName(device)} SETTINGS`;
     ui.adminTitle.textContent = `Ρυθμίσεις · ${id}`;
     refreshDualZoneSettings(device);
+    refreshVentControls(device);
 
     const fw = String((device.state || {}).firmware || "?");
     renderOtaAvailability(device, null, true);
 
     const supportsEntryTypes = firmwareAtLeast(fw, 4, 0);
-    setAdminStatus(
+    if (meterType(device) === "VENTILATION") {
+      setAdminStatus("Έλεγχος εξαερισμού μέσω MQTT · Απομακρυσμένο OTA κλειδωμένο.", "ok");
+    } else setAdminStatus(
       supportsEntryTypes
         ? "Έτοιμο."
         : (firmwareAtLeast(fw, 3, 0)
@@ -1508,10 +1569,10 @@
     updateAdminButtons();
     ui.adminDialog.showModal();
 
-    if (firmwareAtLeast(fw, 3, 0) && client && client.connected) {
+    if (meterType(device) !== "VENTILATION" && firmwareAtLeast(fw, 3, 0) && client && client.connected) {
       setTimeout(() => refreshUtilityRows(id, false), 0);
     }
-    if (client && client.connected) {
+    if (client && client.connected && meterType(device) !== "VENTILATION") {
       setTimeout(() => refreshOtaAvailability(id), 0);
     }
   }
@@ -1529,7 +1590,7 @@
     const state = device ? (device.state || {}) : {};
     const supportsV3 = Boolean(device && firmwareAtLeast(state.firmware, 3, 0));
     const supportsTypes = Boolean(device && firmwareAtLeast(state.firmware, 4, 0));
-    const supportsRestart = Boolean(device && firmwareAtLeast(state.firmware, 4, 3));
+    const supportsRestart = Boolean(device && (meterType(device) === "VENTILATION" || firmwareAtLeast(state.firmware, 4, 3)));
 
     if (ui.utilityHistoryBtn) {
       ui.utilityHistoryBtn.disabled = !adminTargetId || busy || !connected || !supportsV3;
@@ -1575,6 +1636,7 @@
         ? "Κανονική επανεκκίνηση του ESP8266"
         : "Απαιτεί firmware v4.03+";
     }
+    if (device && meterType(device) === "VENTILATION") refreshVentControls(device);
   }
 
   function readUtilityForm() {
@@ -1689,7 +1751,12 @@
       jsy_read_failed: "Απέτυχε η ανάγνωση JSY-MK-333.",
       missing_parameters: "Λείπουν παράμετροι OTA.",
       invalid_https_url: "Το OTA URL δεν είναι έγκυρο.",
-      invalid_command: "Ο ESP8266 δεν αναγνώρισε την εντολή."
+      invalid_command: "Ο ESP8266 δεν αναγνώρισε την εντολή.",
+      manual_required: "Η εντολή επιτρέπεται μόνο σε MANUAL.",
+      invalid_value: "Μη έγκυρη τιμή για αυτή τη λειτουργία.",
+      invalid_time: "Μη έγκυρη ώρα ή περίοδος παύσης.",
+      invalid_range: "Μη έγκυρη περίοδος ιστορικού.",
+      sensor_invalid: "Πρόβλημα αισθητήρων εξαερισμού."
     };
 
     const ok = Boolean(data.ok);
@@ -1720,6 +1787,15 @@
       const msg = errorMessages[data.error] || `Σφάλμα: ${data.error || "άγνωστο"}`;
       if (adminTargetId === id) setAdminStatus(msg, "error");
       showToast(`${id}: ${msg}`, 5000);
+      return;
+    }
+
+    if (meterType(devices.get(id) || {id,state:{}}) === "VENTILATION" &&
+        typeof data.cmd === "string" && data.cmd.startsWith("vent_")) {
+      const message = "Επιβεβαίωση ESP8266: " + data.cmd;
+      if (adminTargetId === id) setAdminStatus(message, "ok");
+      showToast(id + ": " + message);
+      setTimeout(() => requestUpdate(id, false), 250);
       return;
     }
 
@@ -2676,6 +2752,7 @@
           if (adminTargetId === device.id && ui.adminDialog.open) {
             refreshDualZoneSettings(device);
             updateAdminButtons();
+            if (meterType(device) === "VENTILATION") refreshVentControls(device);
           }
         } catch (err) {
           console.error("Invalid meter JSON", parsed.id, text, err);
@@ -2755,6 +2832,20 @@
 
   ui.closeAdminBtn.addEventListener("click", () => ui.adminDialog.close());
 
+  $("ventilationSettings").addEventListener("click", (event) => {
+    const button = event.target.closest?.("button[data-vent-command]");
+    if (!button || !adminTargetId) return;
+    sendVentCommand(adminTargetId, button.dataset.ventCommand || "");
+  });
+  $("saveVentScheduleBtn").addEventListener("click", () => {
+    if (adminTargetId) sendVentCommand(adminTargetId,
+      `vent_schedule|${$("ventPauseFrom").value}|${$("ventPauseTo").value}`);
+  });
+  $("saveVentTimeBtn").addEventListener("click", () => {
+    if (adminTargetId) sendVentCommand(adminTargetId,
+      `vent_time|${$("ventClockInput").value}`);
+  });
+
   ui.otaUpdateBtn.addEventListener("click", () => {
     if (adminTargetId) startRemoteOta(adminTargetId);
   });
@@ -2763,7 +2854,7 @@
     if (!adminTargetId) return;
     const device = devices.get(adminTargetId);
     const firmware = String((device && device.state && device.state.firmware) || "");
-    if (!firmwareAtLeast(firmware, 4, 3)) {
+    if (device && meterType(device) !== "VENTILATION" && !firmwareAtLeast(firmware, 4, 3)) {
       setAdminStatus("Το Restart ESP απαιτεί firmware v4.03+.", "error");
       return;
     }
