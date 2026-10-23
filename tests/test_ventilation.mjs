@@ -191,7 +191,7 @@ assert.equal(b.app.getHistory().seen.size,12);
 const plotted=b.nodes.get("ventHistoryChart").innerHTML;
 assert(plotted.includes("<svg"),"Show graph");
 assert(plotted.includes('data-min-temp="14"'),"Actual recorded minimum is exact Y minimum");
-assert(plotted.includes('data-max-temp="21.3"'),"Max Y also includes the latest live ESP temperature");
+assert(plotted.includes('data-max-temp="25.25"'),"Max Y also includes the latest live ESP temperature");
 assert.equal((plotted.match(/class="vent-grid-hour"/g)||[]).length,25,
   "Preserve 25 hourly vertical grid lines, including the final boundary");
 assert.equal((plotted.match(/class="vent-x-label"/g)||[]).length,24,
@@ -200,9 +200,9 @@ assert(plotted.includes(">00</text>") && plotted.includes(">01</text>") &&
        plotted.includes(">23</text>"), "Use short hour numbers, not HH:MM");
 assert(!plotted.includes(">24</text>") && !plotted.includes(">23:00</text>"),
   "No 24 label or time suffix");
-assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,14,
+assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,23,
   "Draw grid every half-degree within the observed temperature span");
-assert(plotted.includes("21,3°C"),"Top axis text follows observed maximum");
+assert(plotted.includes("25,25°C"),"Top axis text follows observed maximum");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
 assert.equal(b.app.requestVentHistory(vid,"previous"),true);
 assert(b.published.some(x=>x.payload==="vent_history|previous"));
