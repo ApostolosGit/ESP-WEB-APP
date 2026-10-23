@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.73";
+  const APP_VERSION = "5.74";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1563,7 +1563,7 @@
     stopVentLiveRefresh();
     ventLiveRefreshTimer=setInterval(()=>{
       const h=ventHistorySession;
-      if(!h||h.range!=="current"||!$("ventHistoryDialog").open||
+      if(!h||!["current","compare"].includes(h.range)||!$("ventHistoryDialog").open||
          !client?.connected)return;
       requestUpdate(h.id,false); // one small state, never 13 history frames each 15s
     },VENT_LIVE_REFRESH_MS);
@@ -1577,9 +1577,13 @@
     const h = ventHistorySession;
     if (!h) return;
     const status = $("ventHistoryStatus");
-    status.textContent = `${h.id} · ${h.range === "current" ? "Σήμερα" : "Χθες"} · ${h.seen.size * 8}/96 δείγματα${h.complete ? " · ολοκληρώθηκε" : " · λήψη…"}`;
+    if(h.range==="days30")return renderVent30Days(h);
+    const rangeTitle=h.range==="current"?"24 ώρες":h.range==="compare"?"48 ώρες · σύγκριση":"Χθες";
+    status.textContent = `${h.id} · ${rangeTitle} · ${h.complete?"Ολοκληρώθηκε":h.seen.size*8+"/96 δείγματα · λήψη…"}`;
     const numeric = h.rows.flatMap(row => row ? [row.inside, row.outside] : []).filter(Number.isFinite);
-    const live=h.range==="current"?h.live:null;
+    if(h.range==="compare"&&h.previousRows)
+      numeric.push(...h.previousRows.flatMap(row=>row?[row.inside,row.outside]:[]).filter(Number.isFinite));
+    const live=["current","compare"].includes(h.range)?h.live:null;
     if(live){
       if(Number.isFinite(live.inside))numeric.push(live.inside);
       if(Number.isFinite(live.outside))numeric.push(live.outside);
@@ -1592,8 +1596,12 @@
 
     // Exact observed extremes across BOTH inside/outside recordings.
     // Half-degree horizontal guides and one vertical guide per clock hour.
-    const minTemp = Math.min(...numeric);
-    const maxTemp = Math.max(...numeric);
+    const observedMin = Math.min(...numeric);
+    const observedMax = Math.max(...numeric);
+    // The axis and EVERY horizontal guide align to exact multiples of 0.5 C.
+    let minTemp = Math.floor(observedMin*2)/2;
+    let maxTemp = Math.ceil(observedMax*2)/2;
+    if(minTemp===maxTemp){minTemp-=0.5;maxTemp+=0.5;}
     const temperatureSpan = maxTemp - minTemp;
     const plotLeft = 70, plotWidth = 960, plotTop = 48;
     const plotHeight = Math.max(240, Math.min(660, Math.ceil(Math.max(0.5, temperatureSpan) * 28)));
@@ -1606,9 +1614,9 @@
     const formatTemp = value => Number(value.toFixed(2)).toLocaleString("el-GR", {maximumFractionDigits:2});
 
     const horizontal = [];
-    const firstHalfDegree = Math.ceil(minTemp * 2 - 1e-9);
-    const lastHalfDegree = Math.floor(maxTemp * 2 + 1e-9);
-    const labelEvery = Math.max(1, Math.ceil(17 / (plotHeight / Math.max(1, temperatureSpan * 2))));
+    const firstHalfDegree = Math.round(minTemp * 2);
+    const lastHalfDegree = Math.round(maxTemp * 2);
+    const labelEvery = 1;
     if (temperatureSpan === 0) {
       const y = yFor(minTemp).toFixed(2);
       horizontal.push(`<line class="vent-grid-half-degree" x1="${plotLeft}" y1="${y}" x2="${plotLeft + plotWidth}" y2="${y}" stroke="currentColor" stroke-opacity=".24"/>`);
@@ -1623,9 +1631,7 @@
           horizontal.push(`<text class="vent-y-label" x="${plotLeft - 9}" y="${(y + 4).toFixed(2)}" text-anchor="end">${formatTemp(value)}°C</text>`);
         }
       }
-      // Axis endpoints use exact recorded extrema, not rounded tick limits.
-      horizontal.push(`<text class="vent-y-label vent-extreme" x="${plotLeft - 9}" y="${plotTop + 4}" text-anchor="end">${formatTemp(maxTemp)}°C</text>`);
-      horizontal.push(`<text class="vent-y-label vent-extreme" x="${plotLeft - 9}" y="${plotBottom + 4}" text-anchor="end">${formatTemp(minTemp)}°C</text>`);
+      // Extremes are in data attributes; only 0.5C grid ticks label the axis.
     }
 
     const hourly = Array.from({length:25}, (_, hour) => {
@@ -1640,29 +1646,38 @@
     const liveCircle = (key,color) => live && Number.isFinite(live[key])
       ? `<circle class="vent-live-dot" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
       : "";
-    const linePath = key => {
+    const linePath = (key,sourceRows) => {
       let d = "", active = false;
-      h.rows.forEach((row, index) => {
+      (sourceRows || h.rows).forEach((row, index) => {
         if (!row || !Number.isFinite(row[key])) { active = false; return; }
         d += `${active ? "L" : "M"}${xFor(index).toFixed(2)},${yFor(row[key]).toFixed(2)} `;
         active = true;
       });
       return d.trim();
     };
-    $("ventHistoryChart").innerHTML = `<svg class="vent-history-plot" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" data-min-temp="${minTemp}" data-max-temp="${maxTemp}" role="img" aria-label="Θερμοκρασίες μέσα και έξω, πλέγμα 0,5 βαθμούς Κελσίου οριζόντια και κάθε ώρα κατακόρυφα. Ελάχιστη ${formatTemp(minTemp)} και μέγιστη ${formatTemp(maxTemp)} βαθμούς">
+    $("ventHistoryChart").innerHTML = `<svg class="vent-history-plot" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" data-min-temp="${observedMin}" data-max-temp="${observedMax}" data-axis-min="${minTemp}" data-axis-max="${maxTemp}" role="img" aria-label="Θερμοκρασίες μέσα και έξω, πλέγμα 0,5 βαθμούς Κελσίου οριζόντια και κάθε ώρα κατακόρυφα. Ελάχιστη ${formatTemp(minTemp)} και μέγιστη ${formatTemp(maxTemp)} βαθμούς">
       <g class="vent-history-grid">${horizontal.join("")}${hourly}</g>
       <line x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".6"/>
       <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotLeft + plotWidth}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".6"/>
       <path d="${linePath("inside")}" fill="none" stroke="#dc2626" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="${linePath("outside")}" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      ${h.range==="compare"?
+        `<path class="vent-yesterday" d="${linePath("inside",h.previousRows)}" fill="none" stroke="#dc2626" stroke-dasharray="7 5" stroke-width="2.6"/>
+        <path class="vent-yesterday" d="${linePath("outside",h.previousRows)}" fill="none" stroke="#2563eb" stroke-dasharray="7 5" stroke-width="2.6"/>`:""}
       ${liveCircle("inside","#dc2626")}${liveCircle("outside","#2563eb")}
       <g class="vent-history-legend"><text x="${plotLeft + 12}" y="23" fill="#dc2626">● Μέσα</text>
-      <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text></g></svg>`;
+      <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text>
+      ${h.range==="compare"?`<text x="${plotLeft+190}" y="23">— σήμερα · ┄ χθες</text>`:""}</g></svg>`;
     if (!h.complete) { $("ventHistoryTable").innerHTML = ""; return; }
     const td = x => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
+    const compare=h.range==="compare";
     $("ventHistoryTable").innerHTML = `<details><summary>Πίνακας 96 δεκαπεντάλεπτων</summary>
-      <div class="vent-history-table-scroll"><table><thead><tr><th>Ώρα</th><th>Μέσα °C</th><th>Έξω °C</th></tr></thead>
-      <tbody>${h.rows.map((r,i)=>`<tr><td>${String(Math.floor(i/4)).padStart(2,"0")}:${String((i%4)*15).padStart(2,"0")}</td><td>${td(r?.inside)}</td><td>${td(r?.outside)}</td></tr>`).join("")}</tbody>
+      <div class="vent-history-table-scroll"><table><thead><tr><th>Ώρα</th>
+      <th>Μέσα ${compare?"σήμερα ":""}°C</th><th>Έξω ${compare?"σήμερα ":""}°C</th>
+      ${compare?"<th>Μέσα χθες °C</th><th>Έξω χθες °C</th>":""}</tr></thead>
+      <tbody>${h.rows.map((r,i)=>`<tr><td>${String(Math.floor(i/4)).padStart(2,"0")}:${String((i%4)*15).padStart(2,"0")}</td>
+      <td>${td(r?.inside)}</td><td>${td(r?.outside)}</td>
+      ${compare?`<td>${td(h.previousRows?.[i]?.inside)}</td><td>${td(h.previousRows?.[i]?.outside)}</td>`:""}</tr>`).join("")}</tbody>
       </table></div></details>`;
   }
   function requestVentHistory(id, range) {
@@ -3472,7 +3487,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.73", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.74", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
