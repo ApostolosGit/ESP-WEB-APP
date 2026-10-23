@@ -1586,7 +1586,7 @@
       if(n.length!==2)return;
       const parsed=n.map(v=>{
         if(v==="null")return null;
-        if(!/^-?\\d+(?:\\.\\d+)?$/.test(v))return NaN;
+        if(!/^-?\d+(?:\.\d+)?$/.test(v))return NaN;
         const t=Number(v);
         return Number.isFinite(t) && t>=-55 && t<=125 ? t : NaN;
       });
@@ -1613,9 +1613,9 @@
       `${manual ? "MANUAL" : "AUTO"} · ${state.fan_on ? "Ανεμιστήρας ON" : "Ανεμιστήρας OFF"} · ${state.season === "summer" ? "Καλοκαίρι" : "Χειμώνας"} · ${state.speed === "high" ? "Υψηλή" : "Χαμηλή"} ταχύτητα`;
     $("ventLiveInfo").textContent = text;
     if (known && !busy) {
-      if (/^\\d{2}:\\d{2}$/.test(state.stop_from || "")) $("ventPauseFrom").value = state.stop_from;
-      if (/^\\d{2}:\\d{2}$/.test(state.stop_to || "")) $("ventPauseTo").value = state.stop_to;
-      if (/^\\d{2}:\\d{2}:\\d{2}$/.test(state.time || "")) $("ventClockInput").value = state.time;
+      if (/^\d{2}:\d{2}$/.test(state.stop_from || "")) $("ventPauseFrom").value = state.stop_from;
+      if (/^\d{2}:\d{2}$/.test(state.stop_to || "")) $("ventPauseTo").value = state.stop_to;
+      if (/^\d{2}:\d{2}:\d{2}$/.test(state.time || "")) $("ventClockInput").value = state.time;
     }
     for (const btn of $("ventilationSettings").querySelectorAll?.("[data-vent-command]") || []) {
       const cmd = btn.dataset.ventCommand || "";
@@ -1637,8 +1637,8 @@
       "vent_season|summer","vent_season|winter"
     ]);
     if (!allowed.has(command) &&
-        !/^vent_schedule\\|(?:[01]\\d|2[0-3]):[0-5]\\d\\|(?:[01]\\d|2[0-3]):[0-5]\\d$/.test(command) &&
-        !/^vent_time\\|(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(command)) {
+        !/^vent_schedule\|(?:[01]\d|2[0-3]):[0-5]\d\|(?:[01]\d|2[0-3]):[0-5]\d$/.test(command) &&
+        !/^vent_time\|(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(command)) {
       setAdminStatus("Μη επιτρεπτή εντολή εξαερισμού.", "error");
       return false;
     }
@@ -1649,7 +1649,7 @@
     }
     if ((command === "vent_fan|on" || command === "vent_mode|manual" ||
          command.startsWith("vent_season|") || command.startsWith("vent_schedule|")) &&
-        !window.confirm(`Αποστολή εντολής στον πραγματικό εξαερισμό ${id};\\n\\n${command}\\n\\nΕπιβεβαίωσε ότι η εγκατάσταση μπορεί να λειτουργήσει με ασφάλεια.`)) return false;
+        !window.confirm(`Αποστολή εντολής στον πραγματικό εξαερισμό ${id};\n\n${command}\n\nΕπιβεβαίωσε ότι η εγκατάσταση μπορεί να λειτουργήσει με ασφάλεια.`)) return false;
     adminTargetId = id;
     sendAdmin(command, `Αποστολή: ${command}…`);
     refreshVentControls(device);
