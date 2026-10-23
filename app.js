@@ -1702,8 +1702,7 @@
         const value = half / 2;
         const y = yFor(value);
         horizontal.push(`<line class="vent-grid-half-degree" x1="${plotLeft}" y1="${y.toFixed(2)}" x2="${plotLeft + plotWidth}" y2="${y.toFixed(2)}" stroke="currentColor" stroke-opacity=".18"/>`);
-        if ((half - firstHalfDegree) % labelEvery === 0 &&
-            y > plotTop + 14 && y < plotBottom - 14) {
+        if ((half - firstHalfDegree) % labelEvery === 0) {
           horizontal.push(`<text class="vent-y-label" x="${plotLeft - 9}" y="${(y + 4).toFixed(2)}" text-anchor="end">${formatTemp(value)}°C</text>`);
         }
       }
