@@ -3347,6 +3347,16 @@
       startVentLiveRefresh();
     }
   });
+  $("ventHistoryCompareBtn").addEventListener("click", ()=>{
+    if (ventHistorySession){
+      requestVentHistory(ventHistorySession.id,"compare");
+      startVentLiveRefresh();
+    }
+  });
+  $("ventHistoryDaysBtn").addEventListener("click", ()=>{
+    stopVentLiveRefresh();
+    if (ventHistorySession) requestVentHistory(ventHistorySession.id,"days30");
+  });
   $("ventHistoryPreviousBtn").addEventListener("click", ()=>{
     stopVentLiveRefresh();
     if (ventHistorySession) requestVentHistory(ventHistorySession.id,"previous");
