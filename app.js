@@ -1478,6 +1478,126 @@
     return true;
   }
 
+  // Ventilation v1.00 publishes 12 non-retained chunks per requested day:
+  // R|current/previous|offset|inside,outside|... and E|range.
+  let ventHistorySession = null;
+  let ventHistoryTimeout = null;
+  function ventHistoryClearTimeout() {
+    if (ventHistoryTimeout) clearTimeout(ventHistoryTimeout);
+    ventHistoryTimeout = null;
+  }
+  function renderVentHistory() {
+    const h = ventHistorySession;
+    if (!h) return;
+    const status = $("ventHistoryStatus");
+    status.textContent = `${h.id} · ${h.range === "current" ? "Σήμερα" : "Χθες"} · ${h.seen.size * 8}/96 δείγματα${h.complete ? " · ολοκληρώθηκε" : " · λήψη…"}`;
+    const numeric = h.rows.flatMap(row => row ? [row.inside,row.outside] : []).filter(Number.isFinite);
+    if (!numeric.length) {
+      $("ventHistoryChart").innerHTML = '<p class="admin-help">Αναμονή δεδομένων θερμοκρασίας από τον ESP8266.</p>';
+      $("ventHistoryTable").innerHTML = "";
+      return;
+    }
+    const lo = Math.floor(Math.min(...numeric) - 1);
+    const hi = Math.ceil(Math.max(...numeric) + 1);
+    const span = Math.max(1, hi - lo);
+    const xy = (index, value) => {
+      const x = 46 + index * 7.55;
+      const y = 224 - ((value - lo) / span) * 184;
+      return [x.toFixed(1),y.toFixed(1)];
+    };
+    const plot = (key) => h.rows.map((row,i) =>
+      row && Number.isFinite(row[key]) ? xy(i,row[key]) : null
+    ).reduce((acc,p) => {
+      if (!p) {acc.prev=false;return acc;}
+      acc.d += (acc.prev ? "L" : "M") + p[0] + "," + p[1] + " ";
+      acc.prev=true; return acc;
+    },{d:"",prev:false}).d;
+    const marks = [0,24,48,72,95].map(i =>
+      `<text x="${46+i*7.55}" y="249" text-anchor="middle">${String(Math.floor(i/4)).padStart(2,"0")}:00</text>`
+    ).join("");
+    $("ventHistoryChart").innerHTML = `<svg viewBox="0 0 800 270" width="800" height="270" role="img" aria-label="Θερμοκρασία μέσα και έξω ανά 15 λεπτά">
+      <line x1="46" y1="40" x2="46" y2="224" stroke="currentColor" opacity=".5"/>
+      <line x1="46" y1="224" x2="766" y2="224" stroke="currentColor" opacity=".5"/>
+      <text x="4" y="45" fill="currentColor" font-size="12">${hi}°</text>
+      <text x="4" y="224" fill="currentColor" font-size="12">${lo}°</text>
+      <path d="${plot("inside")}" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+      <path d="${plot("outside")}" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+      <g fill="currentColor" font-size="11">${marks}</g>
+      <g font-size="13"><text x="60" y="18" fill="#dc2626">● Μέσα</text>
+      <text x="150" y="18" fill="#2563eb">● Έξω</text></g></svg>`;
+    if (!h.complete) { $("ventHistoryTable").innerHTML="";return; }
+    const td = (x) => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
+    $("ventHistoryTable").innerHTML = `<details><summary>Πίνακας 96 δεκαπεντάλεπτων</summary>
+      <div class="vent-history-table-scroll"><table><thead><tr><th>Ώρα</th><th>Μέσα °C</th><th>Έξω °C</th></tr></thead>
+      <tbody>${h.rows.map((r,i)=>`<tr><td>${String(Math.floor(i/4)).padStart(2,"0")}:${String((i%4)*15).padStart(2,"0")}</td><td>${td(r?.inside)}</td><td>${td(r?.outside)}</td></tr>`).join("")}</tbody>
+      </table></div></details>`;
+  }
+  function requestVentHistory(id, range) {
+    const device = devices.get(id);
+    if (!device || meterType(device) !== "VENTILATION" || !device.online ||
+        !client?.connected || !["current","previous"].includes(range)) return false;
+    ventHistoryClearTimeout();
+    ventHistorySession = {id,range,rows:Array(96).fill(null),seen:new Set(),complete:false};
+    renderVentHistory();
+    const ok = publish(id,"admin/request",`vent_history|${range}`,err=>{
+      if(err && ventHistorySession?.id===id){
+        ventHistoryClearTimeout();
+        $("ventHistoryStatus").textContent = "Αποτυχία MQTT: " + String(err.message || err);
+      }
+    });
+    if (!ok) {
+      $("ventHistoryStatus").textContent="Δεν ήταν δυνατή η αποστολή του αιτήματος.";
+      return false;
+    }
+    ventHistoryTimeout = setTimeout(()=>{
+      if(!ventHistorySession || ventHistorySession.complete || ventHistorySession.id!==id) return;
+      $("ventHistoryStatus").textContent="Ελλιπές ιστορικό: δεν λήφθηκαν όλα τα πακέτα (timeout 20s).";
+      ventHistoryTimeout = null;
+    },20000);
+    return true;
+  }
+  function openVentHistory(id) {
+    const device=devices.get(id);
+    if (!device || meterType(device)!=="VENTILATION" || !device.online || !client?.connected) {
+      showToast("Ο εξαερισμός πρέπει να είναι online για να φορτώσει το ιστορικό.");
+      return;
+    }
+    if (!$("ventHistoryDialog").open) $("ventHistoryDialog").showModal();
+    requestVentHistory(id,"current");
+  }
+  function handleVentHistory(id,text) {
+    const h=ventHistorySession;
+    if(!h || h.id!==id || h.complete || !$("ventHistoryDialog").open) return;
+    const p=String(text).split("|");
+    if(p[1]!==h.range) return;
+    if(p[0]==="E" && p.length===2){
+      ventHistoryClearTimeout();
+      if(h.seen.size===12){h.complete=true;renderVentHistory();}
+      else $("ventHistoryStatus").textContent=`Ελλιπής λήψη: ${h.seen.size*8}/96 δείγματα. Πάτησε ξανά την ημέρα.`;
+      return;
+    }
+    if(p[0]!=="R" || p.length!==11) return;
+    const offset=Number(p[2]);
+    if(!Number.isInteger(offset)||offset<0||offset>88||offset%8!==0)return;
+    if(h.seen.has(offset)) return;
+    const rows=[];
+    for(const pair of p.slice(3)){
+      const n=pair.split(",");
+      if(n.length!==2)return;
+      const parsed=n.map(v=>{
+        if(v==="null")return null;
+        if(!/^-?\\d+(?:\\.\\d+)?$/.test(v))return NaN;
+        const t=Number(v);
+        return Number.isFinite(t) && t>=-55 && t<=125 ? t : NaN;
+      });
+      if(parsed.some(v=>Number.isNaN(v))) return;
+      rows.push({inside:parsed[0],outside:parsed[1]});
+    }
+    rows.forEach((row,i)=>h.rows[offset+i]=row);
+    h.seen.add(offset);
+    renderVentHistory();
+  }
+
   function refreshVentControls(device) {
     const vent = Boolean(device && meterType(device) === "VENTILATION");
     ui.utilityReadingSettings.classList.toggle("hidden", vent);
@@ -2831,6 +2951,17 @@
   });
 
   ui.closeAdminBtn.addEventListener("click", () => ui.adminDialog.close());
+
+  $("closeVentHistoryBtn").addEventListener("click", ()=>{
+    ventHistoryClearTimeout(); ventHistorySession=null;
+    $("ventHistoryDialog").close();
+  });
+  $("ventHistoryCurrentBtn").addEventListener("click", ()=>{
+    if (ventHistorySession) requestVentHistory(ventHistorySession.id,"current");
+  });
+  $("ventHistoryPreviousBtn").addEventListener("click", ()=>{
+    if (ventHistorySession) requestVentHistory(ventHistorySession.id,"previous");
+  });
 
   $("ventilationSettings").addEventListener("click", (event) => {
     const button = event.target.closest?.("button[data-vent-command]");
