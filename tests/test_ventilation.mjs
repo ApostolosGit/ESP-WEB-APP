@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.70'));
-assert(appSource.includes('const APP_VERSION = "5.70"'));
+assert(html.includes('v=5.71'));
+assert(appSource.includes('const APP_VERSION = "5.71"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
@@ -173,6 +173,20 @@ for(let offset=0;offset<96;offset+=8){
 }
 b.message(vid,"vent/history","E|current");
 assert.equal(b.app.getHistory().complete,true);
+const liveSvg=b.nodes.get("ventHistoryChart").innerHTML;
+assert(liveSvg.includes('class="vent-live-dot"') || !b.app.getHistory().live,
+  "Render a live temperature dot if a valid ESP time is present");
+b.message(vid,"state",{...b.app.devices.get(vid).state,time:"10:30:15",
+  temp_inside:25.25,temp_outside:16.75});
+assert.equal(b.app.getHistory().live?.time,"10:30:15",
+  "Update the live chart from the latest 15-second MQTT state");
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes('data-series="inside"'),
+  "Show the live interior thermometer point");
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes('data-series="outside"'),
+  "Show the live exterior thermometer point");
+assert.equal(b.app.getHistory().rows.length,96,
+  "Do not replace the 15-minute history with 15-second samples");
+
 assert.equal(b.app.getHistory().seen.size,12);
 const plotted=b.nodes.get("ventHistoryChart").innerHTML;
 assert(plotted.includes("<svg"),"Show graph");
