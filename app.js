@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.65";
+  const APP_VERSION = "5.66";
   const AUTO_REFRESH_MS = 60000;
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
@@ -596,6 +596,7 @@
       v === null || v === undefined || v === "" || !Number.isFinite(Number(v))
         ? "—" : `${escapeHtml(formatNumber(v, digits))} ${unit}`;
     const sensorsOk = s.sensors_ok === true && device.health?.meter_ok !== false;
+    const relayConfirmed = firmwareAtLeast(s.firmware,1,1);
     const fan = s.fan_on === true;
     const manual = s.mode === "manual";
     return `
@@ -604,6 +605,7 @@
           <strong class="vent-fan ${fan ? "vent-running" : "vent-stopped"}">Ανεμιστήρας: ${fan ? "ΣΕ ΛΕΙΤΟΥΡΓΙΑ" : "ΣΤΑΜΑΤΗΜΕΝΟΣ"}</strong>
           <span>${manual ? "MANUAL" : "AUTO"} · ${s.season === "summer" ? "Καλοκαίρι" : "Χειμώνας"} · ${s.speed === "high" ? "Υψηλή" : "Χαμηλή"} ταχύτητα</span>
         </div>
+        ${!relayConfirmed ? '<p class="meter-error" role="alert"><strong>Firmware πριν την 1.01: αναφέρονται αντίστροφοι χειρισμοί ON/OFF και ταχύτητας.</strong> Οι εντολές από το MQTT.app είναι απενεργοποιημένες έως την ασφαλή διόρθωση.</p>' : ""}
         ${!sensorsOk ? '<p class="measurement-notice" role="status">Προσοχή: σφάλμα αισθητήρων. Η αυτόματη λειτουργία ακολουθεί το fail-safe του ESP.</p>' : ""}
         <div class="vent-measurements">
           <div><span>Έξω (DS18B20)</span><b>${shown(s.temp_outside, "°C")}</b></div>
@@ -1610,6 +1612,10 @@
     const busy = adminBusy.has(device.id);
     const manual = state.mode === "manual";
     const known = device.sampleReceived === true && (state.mode === "auto" || manual);
+    const supported = firmwareAtLeast(state.firmware,1,1);
+    const ntpOk = state.time_synced === true;
+    $("ventTimeSettings").classList.toggle("hidden", ntpOk);
+    $("ventOtaNotice").textContent = supported ? "v1.01+: διορθωμένη λογική ON/OFF και HIGH/LOW. Το MQTT OTA παραμένει απενεργοποιημένο μέχρι τις δοκιμές σε πραγματικό ESP8266." : "ΣΗΜΑΝΤΙΚΟ: firmware πριν την 1.01 — αντίστροφοι χειρισμοί ρελέ. Οι εντολές από το app είναι κλειδωμένες έως την ασφαλή αναβάθμιση.";
     const text = !known ? "Αναμονή έγκυρης κατάστασης ESP8266." :
       `${manual ? "MANUAL" : "AUTO"} · ${state.fan_on ? "Ανεμιστήρας ON" : "Ανεμιστήρας OFF"} · ${state.season === "summer" ? "Καλοκαίρι" : "Χειμώνας"} · ${state.speed === "high" ? "Υψηλή" : "Χαμηλή"} ταχύτητα`;
     $("ventLiveInfo").textContent = text;
@@ -1621,16 +1627,20 @@
     for (const btn of $("ventilationSettings").querySelectorAll?.("[data-vent-command]") || []) {
       const cmd = btn.dataset.ventCommand || "";
       const needsManual = cmd.startsWith("vent_fan|") || cmd.startsWith("vent_speed|");
-      btn.disabled = !connected || busy || !known || (needsManual && !manual);
+      btn.disabled = !connected || busy || !known || !supported || (needsManual && !manual);
     }
-    $("saveVentScheduleBtn").disabled = !connected || busy || !known;
-    $("saveVentTimeBtn").disabled = !connected || busy || !known;
+    $("saveVentScheduleBtn").disabled = !connected || busy || !known || !supported;
+    $("saveVentTimeBtn").disabled = !connected || busy || !known || !supported || ntpOk;
   }
 
   function sendVentCommand(id, command) {
     const device = devices.get(id);
     if (!device || meterType(device) !== "VENTILATION" || !client?.connected ||
         !device.online || adminBusy.has(id) || !device.sampleReceived) return false;
+    if (!firmwareAtLeast(device.state?.firmware,1,1)) {
+      setAdminStatus("Απαιτείται firmware 1.01+: στο παλιό οι χειρισμοί των ρελέ λειτουργούσαν αντίστροφα. Δεν απεστάλη εντολή.", "error");
+      return false;
+    }
     const allowed = new Set([
       "vent_mode|auto","vent_mode|manual",
       "vent_fan|on","vent_fan|off",
@@ -1641,6 +1651,10 @@
         !/^vent_schedule\|(?:[01]\d|2[0-3]):[0-5]\d\|(?:[01]\d|2[0-3]):[0-5]\d$/.test(command) &&
         !/^vent_time\|(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(command)) {
       setAdminStatus("Μη επιτρεπτή εντολή εξαερισμού.", "error");
+      return false;
+    }
+    if (command.startsWith("vent_time|") && device.state?.time_synced === true) {
+      setAdminStatus("Η ώρα ρυθμίζεται αυτόματα από NTP. Η χειροκίνητη ρύθμιση είναι διαθέσιμη μόνο χωρίς συγχρονισμό.", "error");
       return false;
     }
     const manual = device.state?.mode === "manual";
@@ -1901,7 +1915,8 @@
       invalid_value: "Μη έγκυρη τιμή για αυτή τη λειτουργία.",
       invalid_time: "Μη έγκυρη ώρα ή περίοδος παύσης.",
       invalid_range: "Μη έγκυρη περίοδος ιστορικού.",
-      sensor_invalid: "Πρόβλημα αισθητήρων εξαερισμού."
+      sensor_invalid: "Πρόβλημα αισθητήρων εξαερισμού.",
+      ntp_active: "Το NTP λειτουργεί. Δεν χρειάζεται χειροκίνητη ρύθμιση ώρας."
     };
 
     const ok = Boolean(data.ok);
@@ -3255,7 +3270,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.65", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.66", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
