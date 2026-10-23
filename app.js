@@ -3356,10 +3356,6 @@
     stopVentLiveRefresh();
     if (ventHistorySession) requestVentHistory(ventHistorySession.id,"days30");
   });
-  $("ventHistoryPreviousBtn").addEventListener("click", ()=>{
-    stopVentLiveRefresh();
-    if (ventHistorySession) requestVentHistory(ventHistorySession.id,"previous");
-  });
 
   $("ventilationSettings").addEventListener("click", (event) => {
     const button = event.target.closest?.("button[data-vent-command]");
