@@ -18,8 +18,9 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.68";
+  const APP_VERSION = "5.69";
   const AUTO_REFRESH_MS = 60000;
+  const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
   const DEVICE_LIVE_MS = 45000; // Firmware health arrives every 30 seconds.
   const OTA_ACK_TIMEOUT_MS = 12000;
@@ -34,6 +35,8 @@
   let client = null;
   let successfulMqttSettings = null;
   let autoRefreshTimer = null;
+  let emptyDeviceTimer = null;
+  let emptyDeviceDelayElapsed = false;
   let toastTimeout = null;
   let deferredInstallPrompt = null;
   let adminTargetId = null;
@@ -685,7 +688,23 @@
       .filter((d) => d.online)
       .sort((a, b) => a.id.localeCompare(b.id));
 
-    ui.emptyState.classList.toggle("hidden", online.length > 0);
+    // Never show "no device" while the broker is disconnected or MQTT
+    // discovery has not had a few seconds to receive retained/status data.
+    if (online.length || !client?.connected) {
+      if (emptyDeviceTimer !== null) clearTimeout(emptyDeviceTimer);
+      emptyDeviceTimer = null;
+      emptyDeviceDelayElapsed = false;
+      ui.emptyState.classList.add("hidden");
+    } else {
+      if (!emptyDeviceDelayElapsed && emptyDeviceTimer === null) {
+        emptyDeviceTimer = setTimeout(() => {
+          emptyDeviceTimer = null;
+          emptyDeviceDelayElapsed = true;
+          renderAll();
+        }, EMPTY_DEVICE_DELAY_MS);
+      }
+      ui.emptyState.classList.toggle("hidden", !emptyDeviceDelayElapsed);
+    }
     ui.devicesGrid.innerHTML = online.map(device => {
       try { return renderDevice(device); }
       catch (error) {
@@ -1499,47 +1518,82 @@
     if (ventHistoryTimeout) clearTimeout(ventHistoryTimeout);
     ventHistoryTimeout = null;
   }
+
   function renderVentHistory() {
     const h = ventHistorySession;
     if (!h) return;
     const status = $("ventHistoryStatus");
     status.textContent = `${h.id} · ${h.range === "current" ? "Σήμερα" : "Χθες"} · ${h.seen.size * 8}/96 δείγματα${h.complete ? " · ολοκληρώθηκε" : " · λήψη…"}`;
-    const numeric = h.rows.flatMap(row => row ? [row.inside,row.outside] : []).filter(Number.isFinite);
+    const numeric = h.rows.flatMap(row => row ? [row.inside, row.outside] : []).filter(Number.isFinite);
     if (!numeric.length) {
       $("ventHistoryChart").innerHTML = '<p class="admin-help">Αναμονή δεδομένων θερμοκρασίας από τον ESP8266.</p>';
       $("ventHistoryTable").innerHTML = "";
       return;
     }
-    const lo = Math.floor(Math.min(...numeric) - 1);
-    const hi = Math.ceil(Math.max(...numeric) + 1);
-    const span = Math.max(1, hi - lo);
-    const xy = (index, value) => {
-      const x = 46 + index * 7.55;
-      const y = 224 - ((value - lo) / span) * 184;
-      return [x.toFixed(1),y.toFixed(1)];
+
+    // Exact observed extremes across BOTH inside/outside recordings.
+    // Half-degree horizontal guides and one vertical guide per clock hour.
+    const minTemp = Math.min(...numeric);
+    const maxTemp = Math.max(...numeric);
+    const temperatureSpan = maxTemp - minTemp;
+    const plotLeft = 70, plotWidth = 960, plotTop = 48;
+    const plotHeight = Math.max(240, Math.min(660, Math.ceil(Math.max(0.5, temperatureSpan) * 28)));
+    const plotBottom = plotTop + plotHeight;
+    const svgWidth = 1110, svgHeight = plotBottom + 55;
+    const xFor = index => plotLeft + index * plotWidth / 96;
+    const yFor = value => temperatureSpan > 0
+      ? plotTop + (maxTemp - value) * plotHeight / temperatureSpan
+      : plotTop + plotHeight / 2;
+    const formatTemp = value => Number(value.toFixed(2)).toLocaleString("el-GR", {maximumFractionDigits:2});
+
+    const horizontal = [];
+    const firstHalfDegree = Math.ceil(minTemp * 2 - 1e-9);
+    const lastHalfDegree = Math.floor(maxTemp * 2 + 1e-9);
+    const labelEvery = Math.max(1, Math.ceil(17 / (plotHeight / Math.max(1, temperatureSpan * 2))));
+    if (temperatureSpan === 0) {
+      const y = yFor(minTemp).toFixed(2);
+      horizontal.push(`<line class="vent-grid-half-degree" x1="${plotLeft}" y1="${y}" x2="${plotLeft + plotWidth}" y2="${y}" stroke="currentColor" stroke-opacity=".24"/>`);
+      horizontal.push(`<text class="vent-y-label" x="${plotLeft - 9}" y="${Number(y) + 4}" text-anchor="end">${formatTemp(minTemp)}°C</text>`);
+    } else {
+      for (let half = firstHalfDegree; half <= lastHalfDegree; half += 1) {
+        const value = half / 2;
+        const y = yFor(value);
+        horizontal.push(`<line class="vent-grid-half-degree" x1="${plotLeft}" y1="${y.toFixed(2)}" x2="${plotLeft + plotWidth}" y2="${y.toFixed(2)}" stroke="currentColor" stroke-opacity=".18"/>`);
+        if ((half - firstHalfDegree) % labelEvery === 0 &&
+            y > plotTop + 14 && y < plotBottom - 14) {
+          horizontal.push(`<text class="vent-y-label" x="${plotLeft - 9}" y="${(y + 4).toFixed(2)}" text-anchor="end">${formatTemp(value)}°C</text>`);
+        }
+      }
+      // Axis endpoints use exact recorded extrema, not rounded tick limits.
+      horizontal.push(`<text class="vent-y-label vent-extreme" x="${plotLeft - 9}" y="${plotTop + 4}" text-anchor="end">${formatTemp(maxTemp)}°C</text>`);
+      horizontal.push(`<text class="vent-y-label vent-extreme" x="${plotLeft - 9}" y="${plotBottom + 4}" text-anchor="end">${formatTemp(minTemp)}°C</text>`);
+    }
+
+    const hourly = Array.from({length:25}, (_, hour) => {
+      const x = xFor(hour * 4);
+      const label = String(hour).padStart(2,"0") + ":00";
+      return `<line class="vent-grid-hour" x1="${x.toFixed(2)}" y1="${plotTop}" x2="${x.toFixed(2)}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".13"/><text class="vent-x-label" x="${x.toFixed(2)}" y="${plotBottom + 19}" text-anchor="middle">${label}</text>`;
+    }).join("");
+
+    const linePath = key => {
+      let d = "", active = false;
+      h.rows.forEach((row, index) => {
+        if (!row || !Number.isFinite(row[key])) { active = false; return; }
+        d += `${active ? "L" : "M"}${xFor(index).toFixed(2)},${yFor(row[key]).toFixed(2)} `;
+        active = true;
+      });
+      return d.trim();
     };
-    const plot = (key) => h.rows.map((row,i) =>
-      row && Number.isFinite(row[key]) ? xy(i,row[key]) : null
-    ).reduce((acc,p) => {
-      if (!p) {acc.prev=false;return acc;}
-      acc.d += (acc.prev ? "L" : "M") + p[0] + "," + p[1] + " ";
-      acc.prev=true; return acc;
-    },{d:"",prev:false}).d;
-    const marks = [0,24,48,72,95].map(i =>
-      `<text x="${46+i*7.55}" y="249" text-anchor="middle">${String(Math.floor(i/4)).padStart(2,"0")}:00</text>`
-    ).join("");
-    $("ventHistoryChart").innerHTML = `<svg viewBox="0 0 800 270" width="800" height="270" role="img" aria-label="Θερμοκρασία μέσα και έξω ανά 15 λεπτά">
-      <line x1="46" y1="40" x2="46" y2="224" stroke="currentColor" opacity=".5"/>
-      <line x1="46" y1="224" x2="766" y2="224" stroke="currentColor" opacity=".5"/>
-      <text x="4" y="45" fill="currentColor" font-size="12">${hi}°</text>
-      <text x="4" y="224" fill="currentColor" font-size="12">${lo}°</text>
-      <path d="${plot("inside")}" fill="none" stroke="#dc2626" stroke-width="2.5"/>
-      <path d="${plot("outside")}" fill="none" stroke="#2563eb" stroke-width="2.5"/>
-      <g fill="currentColor" font-size="11">${marks}</g>
-      <g font-size="13"><text x="60" y="18" fill="#dc2626">● Μέσα</text>
-      <text x="150" y="18" fill="#2563eb">● Έξω</text></g></svg>`;
-    if (!h.complete) { $("ventHistoryTable").innerHTML="";return; }
-    const td = (x) => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
+    $("ventHistoryChart").innerHTML = `<svg class="vent-history-plot" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}" data-min-temp="${minTemp}" data-max-temp="${maxTemp}" role="img" aria-label="Θερμοκρασίες μέσα και έξω, πλέγμα 0,5 βαθμούς Κελσίου οριζόντια και κάθε ώρα κατακόρυφα. Ελάχιστη ${formatTemp(minTemp)} και μέγιστη ${formatTemp(maxTemp)} βαθμούς">
+      <g class="vent-history-grid">${horizontal.join("")}${hourly}</g>
+      <line x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".6"/>
+      <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotLeft + plotWidth}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".6"/>
+      <path d="${linePath("inside")}" fill="none" stroke="#dc2626" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="${linePath("outside")}" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <g class="vent-history-legend"><text x="${plotLeft + 12}" y="23" fill="#dc2626">● Μέσα</text>
+      <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text></g></svg>`;
+    if (!h.complete) { $("ventHistoryTable").innerHTML = ""; return; }
+    const td = x => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
     $("ventHistoryTable").innerHTML = `<details><summary>Πίνακας 96 δεκαπεντάλεπτων</summary>
       <div class="vent-history-table-scroll"><table><thead><tr><th>Ώρα</th><th>Μέσα °C</th><th>Έξω °C</th></tr></thead>
       <tbody>${h.rows.map((r,i)=>`<tr><td>${String(Math.floor(i/4)).padStart(2,"0")}:${String((i%4)*15).padStart(2,"0")}</td><td>${td(r?.inside)}</td><td>${td(r?.outside)}</td></tr>`).join("")}</tbody>
@@ -2837,6 +2891,7 @@
       writeMqttSession(successfulMqttSettings);
       saveRememberedMqtt(successfulMqttSettings);
       setBrokerState("good", "Συνδεδεμένο");
+      renderAll(); // Start the 8-second discovery grace window only once MQTT is connected.
       showConnectionError();
 
       newClient.subscribe(DISCOVERY_TOPICS, { qos: 0 }, (err, grants = []) => {
@@ -3306,7 +3361,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.68", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.69", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
