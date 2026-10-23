@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.71";
+  const APP_VERSION = "5.72";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -43,6 +43,9 @@
   let otaTargetId = null;
   let otaPendingManifest = null;
   let otaManifestLoading = false;
+  // Ventilation OTA buttons are gated on verified new-manifest availability.
+  // Firmware 1.04 support alone does not mean an OTA image was published.
+  const ventilationOtaAvailable = new Map();
   let otaAwaitingStart = null;
   let otaSession = null;
   let otaAckTimer = null;
@@ -913,7 +916,9 @@
     if (!device || !ui.otaTargetInfo) return;
     const isVentilation = meterType(device) === "VENTILATION";
     if (isVentilation && !firmwareAtLeast(device.state?.firmware,1,4)) {
-      ui.otaTargetInfo.textContent = "Ventilation: μία τελευταία τοπική εγκατάσταση firmware 1.04 απαιτείται για την ενεργοποίηση του MQTT OTA.";
+      ventilationOtaAvailable.delete(device.id);
+      ui.otaTargetInfo.textContent = "Ventilation: απαιτείται firmware 1.04+ για OTA μέσω MQTT.";
+      if (adminTargetId === device.id) updateAdminButtons();
       return;
     }
     const currentFw = String((device.state || {}).firmware || "?");
@@ -927,6 +932,12 @@
       compareFirmwareVersions(manifest.version, currentFw) > 0
     );
 
+    if (isVentilation) {
+      if (hasNewer) ventilationOtaAvailable.set(device.id, {
+        currentFirmware: currentFw, version: manifest.version
+      });
+      else ventilationOtaAvailable.delete(device.id);
+    }
     if (hasNewer) {
       parts.push(
         `<span class="ota-available-line">Available <span class="ota-new-blink">NEW</span> updates: <b>${escapeHtml(manifest.version)}</b></span>`
@@ -934,7 +945,9 @@
     } else if (checking) {
       parts.push('<span class="ota-checking-line">Έλεγχος διαθέσιμης έκδοσης…</span>');
     } else if (checkFailed) {
-      parts.push('<span class="ota-checking-line">Update check unavailable</span>');
+      parts.push(isVentilation
+        ? '<span class="ota-checking-line">Δεν υπάρχει δημοσιευμένο Ventilation OTA ή δεν ήταν δυνατός ο έλεγχος.</span>'
+        : '<span class="ota-checking-line">Update check unavailable</span>');
     } else {
       parts.push('<span class="ota-none-line">No new updates</span>');
     }
@@ -946,6 +959,7 @@
       parts.push('<span class="ota-checking-line">Τοπικό Recovery OTA διατηρείται. Απομακρυσμένο OTA μόνο σε νέα δημοσιευμένη έκδοση και μετά από επιβεβαίωση/PIN.</span>');
     }
     ui.otaTargetInfo.innerHTML = parts.join("");
+    if (isVentilation && adminTargetId === device.id) updateAdminButtons();
   }
 
   async function refreshOtaAvailability(id) {
@@ -958,11 +972,13 @@
       const manifest = await loadOtaManifest(device);
       if (adminTargetId !== id) return;
       renderOtaAvailability(device, manifest, false);
-    } catch (_) {
+    } catch (error) {
       if (adminTargetId !== id) return;
-      if (meterType(device) === "VENTILATION") {
-        ui.otaTargetInfo.textContent = "Ventilation OTA ενεργό από firmware 1.04 — δεν υπάρχει ακόμη δημοσιευμένη νεότερη έκδοση στο δημόσιο ESP8266-OTA.";
-      } else renderOtaAvailability(device, null, false, true);
+      renderOtaAvailability(device, null, false, true);
+      if (meterType(device) === "VENTILATION" && /HTTP 404/.test(String(error?.message || error))) {
+        ui.otaTargetInfo.textContent =
+          "Firmware 1.04: υποστηρίζεται MQTT OTA, αλλά λείπει το manifest-ventilation.txt από το δημόσιο ESP8266-OTA. Δεν υπάρχει ακόμη διαθέσιμη αναβάθμιση. Τοπική αναβάθμιση: http://192.168.1.77/recovery-update";
+      }
     }
   }
 
@@ -1233,10 +1249,18 @@
 
   async function startRemoteOta(id) {
     const device = devices.get(id);
-    if (device && meterType(device) === "VENTILATION" &&
-        !firmwareAtLeast(device.state?.firmware,1,4)) {
-      setAdminStatus("Πρώτα εγκατάστησε το Ventilation 1.04 μέσω τοπικού Recovery OTA.", "error");
-      return;
+    if (device && meterType(device) === "VENTILATION") {
+      if (!firmwareAtLeast(device.state?.firmware,1,4)) {
+        setAdminStatus("Πρώτα εγκατάστησε το Ventilation 1.04 μέσω τοπικού Recovery OTA.", "error");
+        return;
+      }
+      const available = ventilationOtaAvailable.get(id);
+      if (!available ||
+          available.currentFirmware !== String(device.state?.firmware || "") ||
+          compareFirmwareVersions(available.version, device.state?.firmware || "") <= 0) {
+        setAdminStatus("Δεν υπάρχει επιβεβαιωμένο νεότερο firmware Ventilation στον OTA server.", "error");
+        return;
+      }
     }
     if (!device) {
       showToast("Η συσκευή δεν είναι πλέον διαθέσιμη.");
@@ -1847,7 +1871,7 @@
 
     const supportsEntryTypes = firmwareAtLeast(fw, 4, 0);
     if (meterType(device) === "VENTILATION") {
-      setAdminStatus("Έλεγχος εξαερισμού μέσω MQTT · Απομακρυσμένο OTA κλειδωμένο.", "ok");
+      setAdminStatus("Έλεγχος εξαερισμού μέσω MQTT · αναζήτηση διαθέσιμου OTA.", "ok");
     } else setAdminStatus(
       supportsEntryTypes
         ? "Έτοιμο."
@@ -1917,10 +1941,17 @@
 
     if (ui.otaUpdateBtn) {
       const fwForOta = String(state.firmware || "");
+      const isVentilation = device && meterType(device) === "VENTILATION";
+      const available = isVentilation ? ventilationOtaAvailable.get(device.id) : null;
+      const canVentilationOta = isVentilation && firmwareAtLeast(fwForOta,1,4) &&
+        Boolean(available && available.currentFirmware === fwForOta &&
+        compareFirmwareVersions(available.version,fwForOta)>0);
       ui.otaUpdateBtn.disabled =
         !adminTargetId || busy || !connected || otaManifestLoading ||
-        (meterType(device) === "VENTILATION"
-          ? !firmwareAtLeast(fwForOta,1,4) : !firmwareAtLeast(fwForOta,2,29));
+        (isVentilation ? !canVentilationOta : !firmwareAtLeast(fwForOta,2,29));
+      ui.otaUpdateBtn.title = isVentilation && !canVentilationOta
+        ? "Δεν υπάρχει επιβεβαιωμένο νεότερο OTA firmware Ventilation."
+        : "Έλεγχος και επιβεβαίωση OTA αναβάθμισης.";
     }
     if (ui.restartEspBtn) {
       ui.restartEspBtn.disabled =
@@ -3425,7 +3456,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.71", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.72", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
