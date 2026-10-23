@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.68'));
-assert(appSource.includes('const APP_VERSION = "5.68"'));
+assert(html.includes('v=5.69'));
+assert(appSource.includes('const APP_VERSION = "5.69"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
@@ -67,12 +67,18 @@ assert(start.includes("globalThis.vtest"));
 const ctx2={...ctx};
 const doc2=new Map();
 function buildContext(){
-  const nodeMap=new Map(), published=[];
+  const nodeMap=new Map(), published=[], delayed=new Map();
   const defineIds=markup=>{for(const m of String(markup).matchAll(/\bid="([^"]+)"/g))if(!nodeMap.has(m[1]))nodeMap.set(m[1],mockNode());};
-  function mockNode(){return {innerHTML:"",textContent:"",value:"",open:false,disabled:false,checked:false,handlers:new Map(),dataset:{},
-    classList:{add(){},remove(){},toggle(){},contains(){return false;}},
-    addEventListener(k,fn){this.handlers.set(k,fn);},insertAdjacentElement(_,n){defineIds(n.innerHTML);},
-    querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;},focus(){},setAttribute(){},reset(){}};}
+  function mockNode(){
+    const classes=new Set();
+    return {innerHTML:"",textContent:"",value:"",open:false,disabled:false,checked:false,handlers:new Map(),dataset:{},
+      classList:{add(c){classes.add(c);},remove(c){classes.delete(c);},
+        toggle(c,force){const on=force===undefined?!classes.has(c):Boolean(force);
+          if(on)classes.add(c);else classes.delete(c);return on;},
+        contains(c){return classes.has(c);}},
+      addEventListener(k,fn){this.handlers.set(k,fn);},insertAdjacentElement(_,n){defineIds(n.innerHTML);},
+      querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;},focus(){},setAttribute(){},reset(){}};
+  }
   defineIds(html);
   const clientHandlers=new Map();
   const c={connected:false,published,on(k,fn){clientHandlers.set(k,fn);},
@@ -87,7 +93,8 @@ function buildContext(){
     navigator:{serviceWorker:{controller:null,addEventListener(){},register:async()=>({update:async()=>{}})}},
     localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
-    setTimeout(fn){return ++idClock;},clearTimeout(){},setInterval(){return ++idClock;},clearInterval(){},
+    setTimeout(fn,ms){const id=++idClock;delayed.set(id,{fn,ms});return id;},
+    clearTimeout(id){delayed.delete(id);},setInterval(){return ++idClock;},clearInterval(){},
     mqtt:{connect(){return c;}}};
   vm.createContext(sandbox);
   vm.runInContext(start,sandbox);
@@ -96,11 +103,20 @@ function buildContext(){
   const message=(id,suffix,data)=>c.emit("message",`home/energy/${id}/${suffix}`,{
     toString:()=>typeof data==="string"?data:JSON.stringify(data)
   },{retain:false});
-  return {app:sandbox.vtest,c,message,nodes:nodeMap,published};
+  return {app:sandbox.vtest,c,message,nodes:nodeMap,published,delayed};
 }
 const b=buildContext();
+// Never show "no online device" immediately when the MQTT session connects.
+// After the 8-second discovery period, show it if still empty.
+assert(b.nodes.get("emptyState").classList.contains("hidden"),"Hide empty state during MQTT discovery");
+const discovery = [...b.delayed.entries()].find(([,timer])=>timer.ms===8000);
+assert(discovery, "Exactly one 8-second device discovery grace is scheduled");
+b.delayed.delete(discovery[0]);discovery[1].fn();
+assert.equal(b.nodes.get("emptyState").classList.contains("hidden"),false,
+  "Show empty state only after the grace expires");
 const vid="vent-A1B2C3D4E5F6";
 b.message(vid,"status","online");
+assert(b.nodes.get("emptyState").classList.contains("hidden"),"Hide no-device notice as soon as a device is online");
 b.message(vid,"health",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.03",meter_ok:true,read_attempted:true,has_sample:true,rssi:-45,chip_id:123});
 b.message(vid,"state",{meter:"VENTILATION",device_type:"VENTILATION",firmware:"1.03",temp_inside:21.3,temp_outside:15.2,temp_middle:19.1,humidity_inside:60,humidity_outside:45,fan_on:false,speed:"low",mode:"auto",season:"winter",stop_from:"06:15",stop_to:"08:30",sensors_ok:true,time:"10:30:00",mains_present:true,rf_high:false,time_synced:false});
 assert.equal(b.app.meterType(b.app.devices.get(vid)),"VENTILATION");
@@ -158,7 +174,15 @@ for(let offset=0;offset<96;offset+=8){
 b.message(vid,"vent/history","E|current");
 assert.equal(b.app.getHistory().complete,true);
 assert.equal(b.app.getHistory().seen.size,12);
-assert(b.nodes.get("ventHistoryChart").innerHTML.includes("<svg"));
+const plotted=b.nodes.get("ventHistoryChart").innerHTML;
+assert(plotted.includes("<svg"),"Show graph");
+assert(plotted.includes('data-min-temp="14"'),"Actual recorded minimum is exact Y minimum");
+assert(plotted.includes('data-max-temp="20.7"'),"Actual recorded maximum is exact Y maximum");
+assert.equal((plotted.match(/class="vent-grid-hour"/g)||[]).length,25,
+  "Draw 00:00 through 24:00 at 1-hour intervals");
+assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,14,
+  "Draw grid every half-degree within the observed temperature span");
+assert(plotted.includes("20,7°C"),"Top axis text follows observed maximum");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
 assert.equal(b.app.requestVentHistory(vid,"previous"),true);
 assert(b.published.some(x=>x.payload==="vent_history|previous"));
@@ -167,4 +191,12 @@ b.message(vid,"vent/history","R|current|0|1,2|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
 assert.equal(b.app.getHistory().seen.size,0);
 b.message(vid,"vent/history","R|previous|0|notvalid,3|1,2|1,2|1,2|1,2|1,2|1,2|1,2");
 assert.equal(b.app.getHistory().seen.size,0);
+// Degenerate day: all readings identical must render without division by zero.
+for (let offset=0;offset<96;offset+=8) {
+  b.message(vid,"vent/history",`R|previous|${offset}|${Array(8).fill("18.5,18.5").join("|")}`);
+}
+b.message(vid,"vent/history","E|previous");
+const flatChart=b.nodes.get("ventHistoryChart").innerHTML;
+assert(flatChart.includes('data-min-temp="18.5"') && flatChart.includes('data-max-temp="18.5"'));
+assert(!flatChart.includes("NaN"),"Flat temperature must not yield NaN coordinates");
 console.log("Ventilation v1.03 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
