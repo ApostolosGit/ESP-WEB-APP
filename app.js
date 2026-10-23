@@ -1759,13 +1759,21 @@
   function requestVentHistory(id, range) {
     const device = devices.get(id);
     if (!device || meterType(device) !== "VENTILATION" || !device.online ||
-        !client?.connected || !["current","previous"].includes(range)) return false;
+        !client?.connected || !["current","previous","compare","days30"].includes(range)) return false;
+    if(range==="days30"&&!firmwareAtLeast(device.state?.firmware,1,7)){
+      $("ventHistoryStatus").textContent="Το ιστορικό 30 ημερών απαιτεί firmware 1.07+.";
+      return false;
+    }
     ventHistoryClearTimeout();
-    const live=range==="current"?ventLivePoint(device.state):null;
-    ventHistorySession = {id,range,rows:Array(96).fill(null),seen:new Set(),
-      complete:false,live,loadedQuarter:live?Math.floor(live.index):null};
+    const live=["current","compare"].includes(range)?ventLivePoint(device.state):null;
+    ventHistorySession = {id,range,rows:Array(96).fill(null),
+      previousRows:range==="compare"?Array(96).fill(null):null,
+      dailyRows:range==="days30"?Array(30).fill(null):null,
+      phase:range==="compare"?"current":range,
+      seen:new Set(),complete:false,live,loadedQuarter:live?Math.floor(live.index):null};
     renderVentHistory();
-    const ok = publish(id,"admin/request",`vent_history|${range}`,err=>{
+    const wireRange=range==="compare"?"current":range;
+    const ok = publish(id,"admin/request",`vent_history|${wireRange}`,err=>{
       if(err && ventHistorySession?.id===id){
         ventHistoryClearTimeout();
         $("ventHistoryStatus").textContent = "Αποτυχία MQTT: " + String(err.message || err);
@@ -1796,11 +1804,54 @@
     const h=ventHistorySession;
     if(!h || h.id!==id || h.complete || !$("ventHistoryDialog").open) return;
     const p=String(text).split("|");
-    if(p[1]!==h.range) return;
+    if(h.range==="days30"){
+      if(p[0]==="E"&&p[1]==="days30"&&p.length===2){
+        ventHistoryClearTimeout();
+        if(h.seen.size===10){h.complete=true;renderVentHistory();}
+        else $("ventHistoryStatus").textContent="Ελλιπείς καταγραφές 30 ημερών.";
+        return;
+      }
+      if(p[0]!=="D"||p.length!==5)return;
+      const offset=Number(p[1]);
+      if(!Number.isInteger(offset)||offset<0||offset>27||offset%3!==0||h.seen.has(offset))return;
+      const fields=["insideMin","insideMax","insideAvg","outsideMin","outsideMax","outsideAvg"];
+      const parsed=[];
+      for(const record of p.slice(2)){
+        const a=record.split(",");
+        if(a.length!==7||!/^[0-9]+$/.test(a[0]))return;
+        const key=Number(a[0]);
+        if(!Number.isInteger(key)||key<0||key>80000)return;
+        const vals=a.slice(1).map(raw=>{
+          if(raw==="null")return null;
+          if(!/^-?\\d+(?:\\.\\d+)?$/.test(raw))return NaN;
+          const n=Number(raw);
+          return Number.isFinite(n)&&n>=-55&&n<=125?n:NaN;
+        });
+        if(vals.some(Number.isNaN))return;
+        const row={dayKey:key};
+        fields.forEach((name,i)=>{row[name]=vals[i];});
+        parsed.push(row);
+      }
+      parsed.forEach((r,i)=>h.dailyRows[offset+i]=r);
+      h.seen.add(offset);
+      renderVentHistory();
+      return;
+    }
+    const wireRange=h.range==="compare"?h.phase:h.range;
+    if(p[1]!==wireRange) return;
     if(p[0]==="E" && p.length===2){
       ventHistoryClearTimeout();
-      if(h.seen.size===12){h.complete=true;renderVentHistory();}
-      else $("ventHistoryStatus").textContent=`Ελλιπής λήψη: ${h.seen.size*8}/96 δείγματα. Πάτησε ξανά την ημέρα.`;
+      if(h.seen.size===12){
+        if(h.range==="compare"&&h.phase==="current"){
+          h.phase="previous";h.seen.clear();renderVentHistory();
+          const sent=publish(id,"admin/request","vent_history|previous");
+          if(!sent){$("ventHistoryStatus").textContent="Δεν ξεκίνησε η λήψη χθεσινής ημέρας.";return;}
+          ventHistoryTimeout=setTimeout(()=>{
+            if(ventHistorySession===h&&!h.complete)
+              $("ventHistoryStatus").textContent="Η χθεσινή λήψη δεν ολοκληρώθηκε (20s).";
+          },20000);
+        }else{h.complete=true;renderVentHistory();}
+      }else $("ventHistoryStatus").textContent=`Ελλιπής λήψη: ${h.seen.size*8}/96 δείγματα. Πάτησε ξανά την ημέρα.`;
       return;
     }
     if(p[0]!=="R" || p.length!==11) return;
@@ -1820,7 +1871,8 @@
       if(parsed.some(v=>Number.isNaN(v))) return;
       rows.push({inside:parsed[0],outside:parsed[1]});
     }
-    rows.forEach((row,i)=>h.rows[offset+i]=row);
+    const target=h.range==="compare"&&h.phase==="previous"?h.previousRows:h.rows;
+    rows.forEach((row,i)=>target[offset+i]=row);
     h.seen.add(offset);
     renderVentHistory();
   }
@@ -2922,7 +2974,7 @@
       device.sampleReceived = true;
       device.lastReceived = new Date();
       const h=ventHistorySession;
-      if(h && h.id===device.id && h.range==="current" &&
+      if(h && h.id===device.id && ["current","compare"].includes(h.range) &&
          $("ventHistoryDialog").open && meterType(device)==="VENTILATION"){
         const live=ventLivePoint(state);
         if(live){
@@ -2931,7 +2983,7 @@
           if(h.complete && h.loadedQuarter!==null && quarter!==h.loadedQuarter){
             // Re-read quarter-hour aggregates only at the next quarter,
             // not on every 15-second live sample.
-            requestVentHistory(device.id,"current");
+            requestVentHistory(device.id,h.range);
           }else renderVentHistory();
         }
       }
