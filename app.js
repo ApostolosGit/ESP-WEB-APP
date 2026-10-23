@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.69";
+  const APP_VERSION = "5.70";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1571,8 +1571,11 @@
 
     const hourly = Array.from({length:25}, (_, hour) => {
       const x = xFor(hour * 4);
-      const label = String(hour).padStart(2,"0") + ":00";
-      return `<line class="vent-grid-hour" x1="${x.toFixed(2)}" y1="${plotTop}" x2="${x.toFixed(2)}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".13"/><text class="vent-x-label" x="${x.toFixed(2)}" y="${plotBottom + 19}" text-anchor="middle">${label}</text>`;
+      // Keep the midnight boundary line at 24:00, but only label 00…23.
+      const label = hour < 24
+        ? `<text class="vent-x-label" x="${x.toFixed(2)}" y="${plotBottom + 19}" text-anchor="middle">${String(hour).padStart(2,"0")}</text>`
+        : "";
+      return `<line class="vent-grid-hour" x1="${x.toFixed(2)}" y1="${plotTop}" x2="${x.toFixed(2)}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".13"/>${label}`;
     }).join("");
 
     const linePath = key => {
@@ -3361,7 +3364,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.69", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.70", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
