@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.70";
+  const APP_VERSION = "5.71";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1514,6 +1514,35 @@
   const ventAdminTimeouts = new Map();
   let ventHistorySession = null;
   let ventHistoryTimeout = null;
+  let ventLiveRefreshTimer = null;
+  const VENT_LIVE_REFRESH_MS = 15000;
+  function ventLivePoint(state) {
+    const t=/^([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)$/.exec(String(state?.time||""));
+    if(!t)return null;
+    const measured = key => {
+      const x=state?.[key];
+      if(x===null||x===undefined||x==="")return null;
+      const v=Number(x);
+      return Number.isFinite(v)&&v>=-55&&v<=125?v:null;
+    };
+    const inside=measured("temp_inside"), outside=measured("temp_outside");
+    if(inside===null&&outside===null)return null;
+    return {index:(Number(t[1])*3600+Number(t[2])*60+Number(t[3]))/900,
+      inside,outside,time:t[0]};
+  }
+  function stopVentLiveRefresh(){
+    if(ventLiveRefreshTimer!==null)clearInterval(ventLiveRefreshTimer);
+    ventLiveRefreshTimer=null;
+  }
+  function startVentLiveRefresh(){
+    stopVentLiveRefresh();
+    ventLiveRefreshTimer=setInterval(()=>{
+      const h=ventHistorySession;
+      if(!h||h.range!=="current"||!$("ventHistoryDialog").open||
+         !client?.connected)return;
+      requestUpdate(h.id,false); // one small state, never 13 history frames each 15s
+    },VENT_LIVE_REFRESH_MS);
+  }
   function ventHistoryClearTimeout() {
     if (ventHistoryTimeout) clearTimeout(ventHistoryTimeout);
     ventHistoryTimeout = null;
@@ -1525,6 +1554,11 @@
     const status = $("ventHistoryStatus");
     status.textContent = `${h.id} · ${h.range === "current" ? "Σήμερα" : "Χθες"} · ${h.seen.size * 8}/96 δείγματα${h.complete ? " · ολοκληρώθηκε" : " · λήψη…"}`;
     const numeric = h.rows.flatMap(row => row ? [row.inside, row.outside] : []).filter(Number.isFinite);
+    const live=h.range==="current"?h.live:null;
+    if(live){
+      if(Number.isFinite(live.inside))numeric.push(live.inside);
+      if(Number.isFinite(live.outside))numeric.push(live.outside);
+    }
     if (!numeric.length) {
       $("ventHistoryChart").innerHTML = '<p class="admin-help">Αναμονή δεδομένων θερμοκρασίας από τον ESP8266.</p>';
       $("ventHistoryTable").innerHTML = "";
@@ -1578,6 +1612,9 @@
       return `<line class="vent-grid-hour" x1="${x.toFixed(2)}" y1="${plotTop}" x2="${x.toFixed(2)}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".13"/>${label}`;
     }).join("");
 
+    const liveCircle = (key,color) => live && Number.isFinite(live[key])
+      ? `<circle class="vent-live-dot" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
+      : "";
     const linePath = key => {
       let d = "", active = false;
       h.rows.forEach((row, index) => {
@@ -1593,6 +1630,7 @@
       <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotLeft + plotWidth}" y2="${plotBottom}" stroke="currentColor" stroke-opacity=".6"/>
       <path d="${linePath("inside")}" fill="none" stroke="#dc2626" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="${linePath("outside")}" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      ${liveCircle("inside","#dc2626")}${liveCircle("outside","#2563eb")}
       <g class="vent-history-legend"><text x="${plotLeft + 12}" y="23" fill="#dc2626">● Μέσα</text>
       <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text></g></svg>`;
     if (!h.complete) { $("ventHistoryTable").innerHTML = ""; return; }
@@ -1607,7 +1645,9 @@
     if (!device || meterType(device) !== "VENTILATION" || !device.online ||
         !client?.connected || !["current","previous"].includes(range)) return false;
     ventHistoryClearTimeout();
-    ventHistorySession = {id,range,rows:Array(96).fill(null),seen:new Set(),complete:false};
+    const live=range==="current"?ventLivePoint(device.state):null;
+    ventHistorySession = {id,range,rows:Array(96).fill(null),seen:new Set(),
+      complete:false,live,loadedQuarter:live?Math.floor(live.index):null};
     renderVentHistory();
     const ok = publish(id,"admin/request",`vent_history|${range}`,err=>{
       if(err && ventHistorySession?.id===id){
@@ -1634,6 +1674,7 @@
     }
     if (!$("ventHistoryDialog").open) $("ventHistoryDialog").showModal();
     requestVentHistory(id,"current");
+    startVentLiveRefresh();
   }
   function handleVentHistory(id,text) {
     const h=ventHistorySession;
@@ -2742,6 +2783,20 @@
       device.stateError = "";
       device.sampleReceived = true;
       device.lastReceived = new Date();
+      const h=ventHistorySession;
+      if(h && h.id===device.id && h.range==="current" &&
+         $("ventHistoryDialog").open && meterType(device)==="VENTILATION"){
+        const live=ventLivePoint(state);
+        if(live){
+          h.live=live;
+          const quarter=Math.floor(live.index);
+          if(h.complete && h.loadedQuarter!==null && quarter!==h.loadedQuarter){
+            // Re-read quarter-hour aggregates only at the next quarter,
+            // not on every 15-second live sample.
+            requestVentHistory(device.id,"current");
+          }else renderVentHistory();
+        }
+      }
       if (device.health) device.health = {...device.health, meter_ok:state.sensors_ok === false ? false : true, read_attempted:true, has_sample:true};
     } catch (error) {
       device.stateError = "Η απάντηση μετρήσεων δεν είναι έγκυρο αντικείμενο JSON. Αναμονή νέας ενημέρωσης.";
@@ -2846,6 +2901,7 @@
     successfulMqttSettings = null;
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
+    stopVentLiveRefresh();
     if (client) {
       try { client.end(true); } catch (_) {}
     }
@@ -3091,13 +3147,18 @@
   ui.closeAdminBtn.addEventListener("click", () => ui.adminDialog.close());
 
   $("closeVentHistoryBtn").addEventListener("click", ()=>{
+    stopVentLiveRefresh();
     ventHistoryClearTimeout(); ventHistorySession=null;
     $("ventHistoryDialog").close();
   });
   $("ventHistoryCurrentBtn").addEventListener("click", ()=>{
-    if (ventHistorySession) requestVentHistory(ventHistorySession.id,"current");
+    if (ventHistorySession){
+      requestVentHistory(ventHistorySession.id,"current");
+      startVentLiveRefresh();
+    }
   });
   $("ventHistoryPreviousBtn").addEventListener("click", ()=>{
+    stopVentLiveRefresh();
     if (ventHistorySession) requestVentHistory(ventHistorySession.id,"previous");
   });
 
@@ -3364,7 +3425,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.70", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.71", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
