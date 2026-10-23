@@ -1422,3 +1422,24 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .vent-history-table th:first-child, .vent-history-table td:first-child { text-align: left; }
 .vent-history-table summary { cursor: pointer; padding: 10px 2px; }
 @media(max-width:450px) { .vent-control-grid { grid-template-columns: 1fr 1fr; } .vent-measurements { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+/* Ventilation v1.03: active choices reflect last confirmed ESP MQTT state. */
+.vent-control-grid .secondary-btn { background: #e5edf0; color: #21435a; }
+.vent-control-grid .vent-selected {
+  background: #008f78; color: #fff; border-color: #008f78;
+  box-shadow: inset 0 0 0 2px #007d69;
+}
+.vent-control-grid .vent-auto-disabled,
+.vent-control-grid .vent-auto-disabled:disabled {
+  background: #dbe1e5; color: #6c7680; border-color: transparent;
+  box-shadow: none; opacity: .65;
+  cursor: not-allowed;
+}
+.vent-control-grid .vent-auto-disabled.vent-selected:disabled {
+  background: #a0b8b2; color: #273f39; opacity: .85;
+  box-shadow: inset 0 0 0 2px #79938b;
+}
+.vent-control-grid button:disabled:not(.vent-auto-disabled) { cursor: not-allowed; opacity: .55; }
+.vent-control-grid button.vent-selected:not(:disabled) { opacity: 1; }
+.vent-time-schedule { font-size: .96rem; margin: 14px 2px 6px; line-height: 1.6; }
+.vent-time-schedule b { font-variant-numeric: tabular-nums; }
