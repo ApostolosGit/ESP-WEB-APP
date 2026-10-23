@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.69'));
-assert(appSource.includes('const APP_VERSION = "5.69"'));
+assert(html.includes('v=5.70'));
+assert(appSource.includes('const APP_VERSION = "5.70"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
@@ -179,7 +179,13 @@ assert(plotted.includes("<svg"),"Show graph");
 assert(plotted.includes('data-min-temp="14"'),"Actual recorded minimum is exact Y minimum");
 assert(plotted.includes('data-max-temp="20.7"'),"Actual recorded maximum is exact Y maximum");
 assert.equal((plotted.match(/class="vent-grid-hour"/g)||[]).length,25,
-  "Draw 00:00 through 24:00 at 1-hour intervals");
+  "Preserve 25 hourly vertical grid lines, including the final boundary");
+assert.equal((plotted.match(/class="vent-x-label"/g)||[]).length,24,
+  "Only label the 24 hours from 00 to 23");
+assert(plotted.includes(">00</text>") && plotted.includes(">01</text>") &&
+       plotted.includes(">23</text>"), "Use short hour numbers, not HH:MM");
+assert(!plotted.includes(">24</text>") && !plotted.includes(">23:00</text>"),
+  "No 24 label or time suffix");
 assert.equal((plotted.match(/class="vent-grid-half-degree"/g)||[]).length,14,
   "Draw grid every half-degree within the observed temperature span");
 assert(plotted.includes("20,7°C"),"Top axis text follows observed maximum");
