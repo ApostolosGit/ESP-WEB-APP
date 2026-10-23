@@ -1517,7 +1517,7 @@
   let ventLiveRefreshTimer = null;
   const VENT_LIVE_REFRESH_MS = 15000;
   function ventLivePoint(state) {
-    const t=/^([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)$/.exec(String(state?.time||""));
+    const t=/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/.exec(String(state?.time||""));
     if(!t)return null;
     const measured = key => {
       const x=state?.[key];
