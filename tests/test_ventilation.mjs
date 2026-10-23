@@ -56,7 +56,8 @@ assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
 assert(html.includes('v=5.68'));
 assert(appSource.includes('const APP_VERSION = "5.68"'));
-assert(appSource.includes('type === "VENTILATION" || !/'));
+assert(appSource.includes('type === "VENTILATION"'));
+assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
 assert(appSource.includes('startRemoteOta(id)'));
 
