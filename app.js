@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.72";
+  const APP_VERSION = "5.73";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1127,7 +1127,7 @@
 
     setOtaProgressUi(
       "running",
-      "Ο ESP8266 αποδέχτηκε το OTA. Γίνεται λήψη, έλεγχος MD5 και εγκατάσταση…"
+      "Ο ESP8266 αποδέχτηκε την εντολή OTA. Ελέγχεται η μνήμη και η HTTPS σύνδεση πριν από το flash…"
     );
     updateOtaRunningDetails("ACK OTA: state=starting");
 
@@ -1148,7 +1148,8 @@
         "Δεν επιβεβαιώθηκε η νέα έκδοση μέσα σε 3 λεπτά.",
         `Τελευταία γνωστή έκδοση: ${lastFw}. Έλεγξε OLED / Recovery / MQTT.`
       );
-    }, OTA_TOTAL_TIMEOUT_MS);
+    }, meterType(devices.get(id) || {id,state:{}}) === "VENTILATION" &&
+       firmwareAtLeast(pending.fromVersion,1,6) ? 300000 : OTA_TOTAL_TIMEOUT_MS);
 
     setTimeout(() => {
       if (otaSession && otaSession.id === id) requestUpdate(id, false);
@@ -2081,7 +2082,14 @@
       invalid_time: "Μη έγκυρη ώρα ή περίοδος παύσης.",
       invalid_range: "Μη έγκυρη περίοδος ιστορικού.",
       sensor_invalid: "Πρόβλημα αισθητήρων εξαερισμού.",
-      ntp_active: "Το NTP λειτουργεί. Δεν χρειάζεται χειροκίνητη ρύθμιση ώρας."
+      ntp_active: "Το NTP λειτουργεί. Δεν χρειάζεται χειροκίνητη ρύθμιση ώρας.",
+      low_heap_preflight: "Ανεπαρκής ελεύθερη ή συνεχόμενη μνήμη για HTTPS OTA.",
+      http_range_status: "Ο OTA server δεν επέστρεψε HTTP 206 (Range).",
+      http_range_length: "Λανθασμένο μήκος τμήματος λήψης OTA.",
+      https_disconnected: "Διακόπηκε η λήψη HTTPS firmware.",
+      https_read_timeout: "Η λήψη HTTPS δεν έδωσε δεδομένα στο όριο χρόνου.",
+      flash_md5_verify: "Αποτυχία επαλήθευσης MD5 ή εγγραφής flash.",
+      ota_total_timeout: "Ο συνολικός χρόνος OTA ξεπέρασε το όριο του ESP."
     };
 
     const ok = Boolean(data.ok);
@@ -2097,6 +2105,14 @@
       return;
     }
 
+    // v1.06+ returns an explicit error *after* the initial starting ACK
+    // and MQTT reconnection; end the progress dialog immediately.
+    if (otaResponse && !ok && otaSession && otaSession.id === id) {
+      failActiveOta("Ο ESP8266 ακύρωσε το OTA: " +
+        (errorMessages[data.error] || data.error || "άγνωστο σφάλμα"),
+        "ESP OTA diagnostics: " + String(text).slice(0,200));
+      return;
+    }
     if (otaResponse && otaAwaitingStart && otaAwaitingStart.id === id) {
       const reason = ok
         ? `Μη αναμενόμενη OTA απάντηση: ${data.state || "χωρίς state"}`
@@ -3456,7 +3472,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.72", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.73", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
