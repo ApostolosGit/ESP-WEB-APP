@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.78";
+  const APP_VERSION = "5.79";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -631,14 +631,26 @@
     const s=device.state || {};
     const shown=v=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))
       ? "—" : escapeHtml(formatNumber(v,1))+" °C";
+    const fourProbeFirmware=firmwareAtLeast(s.firmware,1,5) ||
+      Object.prototype.hasOwnProperty.call(s,"temp_4");
+    const rows=fourProbeFirmware
+      ? [
+          ["Θ1 · GPIO5",s.temp_1],
+          ["Θ2 · GPIO6",s.temp_2],
+          ["Θ3 · GPIO7",s.temp_3],
+          ["Θ4 · GPIO8",s.temp_4]
+        ]
+      : [
+          ["Έξω (DS18B20)",s.temp_outside],
+          ["Ενδιάμεση (DS18B20)",s.temp_middle],
+          ["Μέσα (DS18B20)",s.temp_inside]
+        ];
+    const readings=rows.map(([name,value])=>
+      `<div><span>${name}</span><b>${shown(value)}</b></div>`).join("");
     return `
       <section class="vent-dashboard" aria-label="Μετρήσεις Boiler">
         <p class="measurement-notice" role="status">Μόνο παρακολούθηση — όλοι οι χειρισμοί Boiler είναι απενεργοποιημένοι.</p>
-        <div class="vent-measurements">
-          <div><span>Έξω (DS18B20)</span><b>${shown(s.temp_outside)}</b></div>
-          <div><span>Ενδιάμεση (DS18B20)</span><b>${shown(s.temp_middle)}</b></div>
-          <div><span>Μέσα (DS18B20)</span><b>${shown(s.temp_inside)}</b></div>
-        </div>
+        <div class="vent-measurements">${readings}</div>
         <p class="vent-time-schedule">Ώρα Boiler <b>${escapeHtml(s.time || "—")}</b> · Χειρισμοί <b>ΑΠΕΝΕΡΓΟΠΟΙΗΜΕΝΟΙ</b></p>
       </section>`;
   }
@@ -3691,7 +3703,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.78", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.79", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
