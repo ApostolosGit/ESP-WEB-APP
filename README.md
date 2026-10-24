@@ -1,6 +1,14 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.76
+# Energy DDS / JSY / Ventilation — MQTT.app v5.77
 
-## MQTT.app 5.76 — ESP32-C3 Boiler (μόνο μετρήσεις)
+## 5.77: Boiler firmware-only OTA interface
+
+- BOILER Settings displays **only** a firmware OTA panel (no boiler control or restart).
+- Dedicated public boiler OTA host and manifest; missing manifest fails closed.
+- OTA requires v1.01+, newer matching Boiler ESP32-C3 image, size/MD5 verification, operator confirmation and setup PIN.
+- Existing Ventilation / DDS / JSY functionality unchanged.
+
+
+## MQTT.app 5.77 — ESP32-C3 Boiler (μόνο μετρήσεις)
 
 - Αναγνώριση νέου `device_type: BOILER` και `boiler-<MAC>`, με ξεχωριστή κάρτα 3 DS18B20 (έξω, μέση, μέσα).
 - Boiler: μόνο μετρήσεις, χωρίς κουμπί Ρυθμίσεις ή δυνατότητα αποστολής εντολών χειρισμού.
@@ -8,11 +16,11 @@
 - Οι συσκευές DDS238, JSY και Ventilation διατηρούν τις λειτουργίες τους.
 
 
-## Νέο στην 5.76 — αφαίρεση του κουμπιού «ΧΘΕΣ»
+## Νέο στην 5.77 — αφαίρεση του κουμπιού «ΧΘΕΣ»
 
 - Αφαιρέθηκε η ξεχωριστή επιλογή «ΧΘΕΣ» από τα γραφήματα Ventilation.
 - Παραμένουν οι επιλογές 24 ώρες, 48 ώρες (σήμερα/χθες) και 30 ημέρες, χωρίς αλλαγή στην καταγραφή δεδομένων.
-- Η 5.76 περιλαμβάνει και όλες τις προηγούμενες βελτιώσεις της 5.74.
+- Η 5.77 περιλαμβάνει και όλες τις προηγούμενες βελτιώσεις της 5.74.
 
 ## Νέο στην 5.74 — το κουμπί OTA απαιτεί πραγματικά διαθέσιμο firmware
 
