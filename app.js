@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.76";
+  const APP_VERSION = "5.77";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -46,6 +46,8 @@
   // Ventilation OTA buttons are gated on verified new-manifest availability.
   // Firmware 1.04 support alone does not mean an OTA image was published.
   const ventilationOtaAvailable = new Map();
+  const boilerOtaAvailable = new Map();
+  const BOILER_OTA_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP32-C3-BOILER-OTA/main/";
   let otaAwaitingStart = null;
   let otaSession = null;
   let otaAckTimer = null;
@@ -906,6 +908,11 @@
 
   function otaManifestMatchesDevice(manifest, device) {
     const type = meterType(device);
+    if (type === "BOILER") {
+      const match=/^Boiler_ESP32C3_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
+      return manifest.meter==="BOILER" && Boolean(match) &&
+        manifest.version===`${Number(match?.[1])}.${match?.[2]}`;
+    }
     if (type === "VENTILATION") {
       const match = /^Ventilation_ESP8266_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
       return manifest.meter === "VENTILATION" && Boolean(match) &&
@@ -919,6 +926,7 @@
 
   function otaManifestUrlForDevice(device) {
     const type = meterType(device);
+    if(type==="BOILER")return BOILER_OTA_BASE_URL+"manifest-boiler.txt";
     const file = type === "VENTILATION" ? "manifest-ventilation.txt" :
       (type === "DDS" ? "manifest-dds.txt" : "manifest-jsy.txt");
     return OTA_MANIFEST_BASE_URL + file;
@@ -938,6 +946,13 @@
   function renderOtaAvailability(device, manifest = null, checking = false, checkFailed = false) {
     if (!device || !ui.otaTargetInfo) return;
     const isVentilation = meterType(device) === "VENTILATION";
+    const isBoiler = meterType(device) === "BOILER";
+    if(isBoiler && !firmwareAtLeast(device.state?.firmware,1,1)){
+      boilerOtaAvailable.delete(device.id);
+      ui.otaTargetInfo.textContent="Boiler: πρώτα απαιτείται εγκατάσταση firmware 1.01 μέσω USB.";
+      if(adminTargetId===device.id)updateAdminButtons();
+      return;
+    }
     if (isVentilation && !firmwareAtLeast(device.state?.firmware,1,4)) {
       ventilationOtaAvailable.delete(device.id);
       ui.otaTargetInfo.textContent = "Ventilation: απαιτείται firmware 1.04+ για OTA μέσω MQTT.";
@@ -955,6 +970,12 @@
       compareFirmwareVersions(manifest.version, currentFw) > 0
     );
 
+    if (isBoiler) {
+      if (hasNewer) boilerOtaAvailable.set(device.id,{
+        currentFirmware:currentFw,version:manifest.version
+      });
+      else boilerOtaAvailable.delete(device.id);
+    }
     if (isVentilation) {
       if (hasNewer) ventilationOtaAvailable.set(device.id, {
         currentFirmware: currentFw, version: manifest.version
@@ -968,21 +989,26 @@
     } else if (checking) {
       parts.push('<span class="ota-checking-line">Έλεγχος διαθέσιμης έκδοσης…</span>');
     } else if (checkFailed) {
-      parts.push(isVentilation
+      parts.push(isBoiler
+        ? '<span class="ota-checking-line">Δεν έχει δημοσιευτεί ακόμη νέο Boiler OTA στον ξεχωριστό OTA server.</span>'
+        : isVentilation
         ? '<span class="ota-checking-line">Δεν υπάρχει δημοσιευμένο Ventilation OTA ή δεν ήταν δυνατός ο έλεγχος.</span>'
         : '<span class="ota-checking-line">Update check unavailable</span>');
     } else {
       parts.push('<span class="ota-none-line">No new updates</span>');
     }
 
-    if (!isVentilation && !firmwareAtLeast(currentFw, 2, 29)) {
+    if (!isVentilation && !isBoiler && !firmwareAtLeast(currentFw, 2, 29)) {
       parts.push('<span class="ota-checking-line">Το remote OTA απαιτεί firmware 2.29+.</span>');
+    }
+    if (isBoiler) {
+      parts.push('<span class="ota-checking-line">Μόνο ενημέρωση firmware. Δεν υπάρχουν χειρισμοί Boiler. Χρησιμοποίησε δοκιμασμένο ESP32-C3 αρχείο.</span>');
     }
     if (isVentilation) {
       parts.push('<span class="ota-checking-line">Τοπικό Recovery OTA διατηρείται. Απομακρυσμένο OTA μόνο σε νέα δημοσιευμένη έκδοση και μετά από επιβεβαίωση/PIN.</span>');
     }
     ui.otaTargetInfo.innerHTML = parts.join("");
-    if (isVentilation && adminTargetId === device.id) updateAdminButtons();
+    if ((isVentilation || isBoiler) && adminTargetId === device.id) updateAdminButtons();
   }
 
   async function refreshOtaAvailability(id) {
@@ -990,6 +1016,7 @@
     if (!device) return;
     renderOtaAvailability(device, null, true);
     if (meterType(device) === "VENTILATION" && !firmwareAtLeast(device.state?.firmware,1,4)) return;
+    if (meterType(device) === "BOILER" && !firmwareAtLeast(device.state?.firmware,1,1)) return;
 
     try {
       const manifest = await loadOtaManifest(device);
@@ -1243,8 +1270,8 @@
       `Αποστολή OTA ${fromVersion} → ${manifest.version}. Αναμονή επιβεβαίωσης από ESP8266…`
     );
 
-    const firmwareUrl = OTA_MANIFEST_BASE_URL + encodeURIComponent(manifest.file);
-    const ventilation = meterType(device) === "VENTILATION";
+    const firmwareUrl = (meterType(device)==="BOILER"?BOILER_OTA_BASE_URL:OTA_MANIFEST_BASE_URL) + encodeURIComponent(manifest.file);
+    const ventilation = ["VENTILATION","BOILER"].includes(meterType(device));
     const command = `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}` +
       (ventilation ? `|${ui.otaPinInput.value.trim()}` : "");
 
@@ -1273,6 +1300,16 @@
 
   async function startRemoteOta(id) {
     const device = devices.get(id);
+    if(device && meterType(device)==="BOILER"){
+      if(!firmwareAtLeast(device.state?.firmware,1,1)){
+        setAdminStatus("Το Boiler απαιτεί πρώτα την εγκατάσταση 1.01 μέσω USB.","error");return;
+      }
+      const available=boilerOtaAvailable.get(id);
+      if(!available || available.currentFirmware!==String(device.state?.firmware||"") ||
+        compareFirmwareVersions(available.version,device.state?.firmware||"")<=0){
+        setAdminStatus("Δεν υπάρχει επιβεβαιωμένο νεότερο Boiler OTA.","error");return;
+      }
+    }
     if (device && meterType(device) === "VENTILATION") {
       if (!firmwareAtLeast(device.state?.firmware,1,4)) {
         setAdminStatus("Πρώτα εγκατάστησε το Ventilation 1.04 μέσω τοπικού Recovery OTA.", "error");
@@ -1296,7 +1333,7 @@
     }
 
     const fw = String((device.state || {}).firmware || "");
-    if (meterType(device) !== "VENTILATION" && !firmwareAtLeast(fw, 2, 29)) {
+    if (!["VENTILATION","BOILER"].includes(meterType(device)) && !firmwareAtLeast(fw, 2, 29)) {
       setAdminStatus("Το remote OTA απαιτεί πρώτα firmware 2.29+.", "error");
       showToast(`${id}: απαιτεί firmware 2.29+`);
       return;
@@ -1327,7 +1364,7 @@
       }
 
       const isNewer = versionComparison > 0;
-      if (meterType(device) === "VENTILATION" && !isNewer) {
+      if (["VENTILATION","BOILER"].includes(meterType(device)) && !isNewer) {
         setAdminStatus("Δεν υπάρχει νεότερο Ventilation firmware προς OTA. Δεν επιτρέπεται επανεγκατάσταση ή downgrade.", "error");
         return;
       }
