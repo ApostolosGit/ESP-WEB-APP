@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.75";
+  const APP_VERSION = "5.76";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -318,6 +318,7 @@
   function meterType(device) {
     const s = device.state || {};
     const declared = String(s.device_type || s.meter || device.health?.device_type || device.health?.meter || "").toUpperCase();
+    if (declared.includes("BOILER") || device.id.toLowerCase().startsWith("boiler-")) return "BOILER";
     if (declared.includes("VENTILATION") || device.id.toLowerCase().startsWith("vent-")) return "VENTILATION";
     if (declared.includes("JSY")) return "JSY";
     if (declared.includes("DDS")) return "DDS";
@@ -327,13 +328,18 @@
     return "DDS";
   }
 
+  function isTemperatureDevice(device) {
+    return ["VENTILATION","BOILER"].includes(meterType(device));
+  }
   function meterName(device) {
+    if (meterType(device) === "BOILER") return "Boiler";
     const s = device.state || {};
     if (s.meter) return String(s.meter);
     return meterType(device) === "VENTILATION" ? "Εξαερισμός" : (meterType(device) === "JSY" ? "JSY-MK-333" : "DDS238");
   }
 
   function meterPhaseType(device) {
+    if (meterType(device) === "BOILER") return "Θερμοκρασίες Boiler";
     return meterType(device) === "VENTILATION" ? "Εξαερισμός" : (meterType(device) === "JSY" ? "Τριφασικό" : "Μονοφασικό");
   }
 
@@ -619,19 +625,36 @@
       </section>`;
   }
 
+  function renderBoilerBody(device) {
+    const s=device.state || {};
+    const shown=v=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))
+      ? "—" : escapeHtml(formatNumber(v,1))+" °C";
+    return `
+      <section class="vent-dashboard" aria-label="Μετρήσεις Boiler">
+        <p class="measurement-notice" role="status">Μόνο παρακολούθηση — όλοι οι χειρισμοί Boiler είναι απενεργοποιημένοι.</p>
+        <div class="vent-measurements">
+          <div><span>Έξω (DS18B20)</span><b>${shown(s.temp_outside)}</b></div>
+          <div><span>Ενδιάμεση (DS18B20)</span><b>${shown(s.temp_middle)}</b></div>
+          <div><span>Μέσα (DS18B20)</span><b>${shown(s.temp_inside)}</b></div>
+        </div>
+        <p class="vent-time-schedule">Ώρα Boiler <b>${escapeHtml(s.time || "—")}</b> · Χειρισμοί <b>ΑΠΕΝΕΡΓΟΠΟΙΗΜΕΝΟΙ</b></p>
+      </section>`;
+  }
+
   function renderDevice(device) {
     const state = device.state || {};
     const sensorFailed = device.health?.read_attempted === true && device.health.meter_ok === false;
     const hasSample = device.sampleReceived === true;
     const ventilation = meterType(device) === "VENTILATION";
+    const boiler = meterType(device) === "BOILER";
     const body = device.responseTimedOut
         ? '<div class="meter-error"><strong>Ο ESP δεν απάντησε σε δύο αιτήματα ενημέρωσης.</strong><p>Δεν έχει επιβεβαιωθεί πρόσφατα η σύνδεσή του. Οι άλλες συσκευές συνεχίζουν ανεξάρτητα.</p></div>'
-      : sensorFailed && !ventilation
+      : sensorFailed && !ventilation && !boiler
         ? `<div class="meter-error" role="status"><strong>Σφάλμα μετρητή ${escapeHtml(meterName(device))}</strong><p>Δεν λαμβάνονται έγκυρα δεδομένα από τον μετρητή. Έλεγξε τροφοδοσία, σύνδεση Modbus και διεύθυνση αισθητήρα. Ο ESP παραμένει συνδεδεμένος και επαναλαμβάνει τις αναγνώσεις.</p><p>${device.health.has_sample ? 'Υπάρχει προηγούμενη έγκυρη μέτρηση. Οι παλιές τιμές δεν εμφανίζονται ως τρέχουσες.' : 'Δεν έχει ληφθεί ακόμη έγκυρη μέτρηση.'}</p></div>`
       : device.stateError
         ? `<div class="meter-error"><strong>Μη έγκυρη ενημέρωση ${escapeHtml(device.id)}</strong><p>${escapeHtml(device.stateError)}</p></div>`
         : hasSample
-          ? (ventilation ? renderVentilationBody(device) : (meterType(device) === "JSY" ? renderJsyBody(device) : renderDdsBody(device)))
+          ? (boiler ? renderBoilerBody(device) : (ventilation ? renderVentilationBody(device) : (meterType(device) === "JSY" ? renderJsyBody(device) : renderDdsBody(device))))
           : '<div class="waiting-state">Ο ESP είναι online. Αναμονή για τις πρώτες μετρήσεις…</div>';
 
     const last = device.lastReceived
@@ -656,7 +679,7 @@
     }
 
     return `
-      <article class="device-panel ${ventilation ? "vent-device-panel" : ""}" data-device="${escapeHtml(device.id)}">
+      <article class="device-panel ${ventilation || boiler ? "vent-device-panel" : ""}" data-device="${escapeHtml(device.id)}">
         <div class="device-head">
           <div class="device-title-wrap">
             <span class="dot ${sensorFailed || device.stateError || device.responseTimedOut || device.updateDelayed ? "dot-warn" : "dot-good"}"></span>
@@ -672,7 +695,7 @@
           <div class="device-head-right">
             <span class="rssi-badge">RSSI ${escapeHtml(rssi)}</span>
             <div class="device-actions">
-              <button class="small-btn ghost" type="button" data-action="admin" data-device="${escapeHtml(device.id)}">ΡΥΘΜΙΣΕΙΣ</button>
+              ${boiler ? "" : `<button class="small-btn ghost" type="button" data-action="admin" data-device="${escapeHtml(device.id)}">ΡΥΘΜΙΣΕΙΣ</button>`}
               <button class="small-btn" type="button" data-action="history" data-device="${escapeHtml(device.id)}">ΓΡΑΦΗΜΑΤΑ</button>
               <button class="small-btn refresh-device" type="button" data-action="refresh" data-device="${escapeHtml(device.id)}">↻ UPDATE</button>
             </div>
@@ -1757,9 +1780,9 @@
   }
   function requestVentHistory(id, range) {
     const device = devices.get(id);
-    if (!device || meterType(device) !== "VENTILATION" || !device.online ||
+    if (!device || !isTemperatureDevice(device) || !device.online ||
         !client?.connected || !["current","previous","compare","days30"].includes(range)) return false;
-    if(range==="days30"&&!firmwareAtLeast(device.state?.firmware,1,7)){
+    if(range==="days30"&&meterType(device)==="VENTILATION"&&!firmwareAtLeast(device.state?.firmware,1,7)){
       $("ventHistoryStatus").textContent="Το ιστορικό 30 ημερών απαιτεί firmware 1.07+.";
       return false;
     }
@@ -1772,7 +1795,8 @@
       seen:new Set(),complete:false,live,loadedQuarter:live?Math.floor(live.index):null};
     renderVentHistory();
     const wireRange=range==="compare"?"current":range;
-    const ok = publish(id,"admin/request",`vent_history|${wireRange}`,err=>{
+    const historyCommand=meterType(device)==="BOILER"?"boiler_history":"vent_history";
+    const ok = publish(id,"admin/request",`${historyCommand}|${wireRange}`,err=>{
       if(err && ventHistorySession?.id===id){
         ventHistoryClearTimeout();
         $("ventHistoryStatus").textContent = "Αποτυχία MQTT: " + String(err.message || err);
@@ -1791,10 +1815,12 @@
   }
   function openVentHistory(id) {
     const device=devices.get(id);
-    if (!device || meterType(device)!=="VENTILATION" || !device.online || !client?.connected) {
-      showToast("Ο εξαερισμός πρέπει να είναι online για να φορτώσει το ιστορικό.");
+    if (!device || !isTemperatureDevice(device) || !device.online || !client?.connected) {
+      showToast("Η συσκευή πρέπει να είναι online για να φορτώσει το ιστορικό.");
       return;
     }
+    const historyHeading=$("ventHistoryDialog").querySelector?.(".eyebrow");
+    if(historyHeading) historyHeading.textContent=meterType(device)==="BOILER"?"BOILER":"VENTILATION";
     if (!$("ventHistoryDialog").open) $("ventHistoryDialog").showModal();
     requestVentHistory(id,"current");
     startVentLiveRefresh();
@@ -1998,6 +2024,7 @@
   function openAdmin(id) {
     const device = devices.get(id);
     if (!device) return;
+    if (meterType(device)==="BOILER") { showToast("Το Boiler λειτουργεί μόνο για μετρήσεις. Οι χειρισμοί είναι απενεργοποιημένοι."); return; }
 
     adminTargetId = id;
     utilityHistoryRows = [];
@@ -2715,7 +2742,7 @@
   }
   function openEnergyHistory(id) {
     const device=devices.get(id);
-    if (device && meterType(device) === "VENTILATION") { openVentHistory(id); return; }
+    if (device && isTemperatureDevice(device)) { openVentHistory(id); return; }
     if(!device || compareFirmwareVersions(String(device.state?.firmware||'0'),'5.00')<0) { showToast('Τα γραφήματα απαιτούν firmware V5.00.'); return; }
     if(!historyDialog.open) historyDialog.showModal();
     loadEnergyHistory(id);
@@ -2974,7 +3001,7 @@
       device.lastReceived = new Date();
       const h=ventHistorySession;
       if(h && h.id===device.id && ["current","compare"].includes(h.range) &&
-         $("ventHistoryDialog").open && meterType(device)==="VENTILATION"){
+         $("ventHistoryDialog").open && isTemperatureDevice(device)){
         const live=ventLivePoint(state);
         if(live){
           h.live=live;
@@ -3264,7 +3291,7 @@
         return;
       }
 
-      if (parsed.suffix === "vent/history") {
+      if (parsed.suffix === "vent/history" || parsed.suffix === "boiler/history") {
         handleVentHistory(parsed.id, text);
         return;
       }
