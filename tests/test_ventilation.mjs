@@ -340,7 +340,7 @@ boiler4.message(boiler4Id,"state",{
 const boiler4Card=boiler4.nodes.get("devicesGrid").innerHTML;
 for(const [label,value] of [
   ["Θ1 · GPIO5","21,5"],["Θ2 · GPIO6","35,7"],
-  ["Θ3 · GPIO7","48,9"],["Θ4 · GPIO8","62,3"]]){
+  ["Θ3 · GPIO7","48,9"],["Θ4 · GPIO21","62,3"]]){
   assert(boiler4Card.includes(label),`Missing boiler probe: ${label}`);
   assert(boiler4Card.includes(value),`Missing temperature ${value}`);
 }
@@ -350,7 +350,7 @@ boiler4.message(boiler4Id,"state",{
   temp_1:22.1,temp_2:40,temp_3:50,temp_4:null,time:"19:06:00"
 });
 const boiler4Missing=boiler4.nodes.get("devicesGrid").innerHTML;
-assert(boiler4Missing.includes("Θ4 · GPIO8"),"Disconnected fourth probe remains visible");
+assert(boiler4Missing.includes("Θ4 · GPIO21"),"Disconnected fourth probe remains visible");
 assert(boiler4Missing.includes(">—</b>"),"Disconnected probe displays dash, never zero");
 console.log("Boiler v1.05 4x independent DS18B20, GPIO5..GPIO8 UI and disconnect status PASS");
 
