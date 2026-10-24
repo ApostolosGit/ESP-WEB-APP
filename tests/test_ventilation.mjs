@@ -278,4 +278,36 @@ assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-daily
   "Six min/max/average daily lines");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα μέση °C"));
 
+
+// Boiler is a SEPARATE type: only 3 DS18B20 readings, no control settings.
+const boiler = buildContext();
+const boilerId = "boiler-A1B2C3D4E5F6";
+boiler.message(boilerId,"status","online");
+boiler.message(boilerId,"health",{
+  meter:"BOILER",device_type:"BOILER",firmware:"1.00",
+  meter_ok:true,read_attempted:true,has_sample:true,rssi:-53,chip_id:999
+});
+boiler.message(boilerId,"state",{
+  meter:"BOILER",device_type:"BOILER",firmware:"1.00",
+  temp_outside:35.2,temp_middle:42.7,temp_inside:49.1,
+  sensors_ok:true,time:"12:30:00",time_synced:true,rssi:-53
+});
+assert.equal(boiler.app.meterType(boiler.app.devices.get(boilerId)),"BOILER");
+const boilerCard = boiler.nodes.get("devicesGrid").innerHTML;
+assert(boilerCard.includes("Boiler") && boilerCard.includes("35,2") &&
+  boilerCard.includes("42,7") && boilerCard.includes("49,1"),
+  "Boiler renders three temperature readings");
+assert(!boilerCard.includes('data-action="admin" data-device="'+boilerId+'"'),
+  "Boiler must not expose controls/settings");
+assert.equal(boiler.app.sendVentCommand(boilerId,"vent_fan|on"),false);
+assert.equal(boiler.app.sendVentCommand(boilerId,"vent_mode|manual"),false);
+const beforeBoilerHistory=boiler.published.length;
+boiler.app.openVentHistory(boilerId);
+assert(boiler.published.slice(beforeBoilerHistory).some(p=>p.payload==="boiler_history|current"),
+  "Boiler requests its own read-only MQTT temperature history");
+assert.equal(boiler.app.requestVentHistory(boilerId,"days30"),true,
+  "Boiler firmware 1.00 already supports 30 day history");
+assert(boiler.published.some(p=>p.payload==="boiler_history|days30"));
+console.log("Boiler 3xDS18B20 discovery, read-only UI, blocked controls and history PASS");
+
 console.log("Ventilation v1.03 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
