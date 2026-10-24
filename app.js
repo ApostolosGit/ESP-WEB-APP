@@ -638,7 +638,7 @@
           ["Θ1 · GPIO5",s.temp_1],
           ["Θ2 · GPIO6",s.temp_2],
           ["Θ3 · GPIO7",s.temp_3],
-          ["Θ4 · GPIO8",s.temp_4]
+          ["Θ4 · GPIO21",s.temp_4]
         ]
       : [
           ["Έξω (DS18B20)",s.temp_outside],
