@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.78'));
-assert(appSource.includes('const APP_VERSION = "5.78"'));
+assert(html.includes('v=5.79'));
+assert(appSource.includes('const APP_VERSION = "5.79"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
@@ -323,6 +323,37 @@ assert(boiler.published.slice(beforeBoilerHistory).some(p=>p.payload==="boiler_h
 assert.equal(boiler.app.requestVentHistory(boilerId,"days30"),true,
   "Boiler firmware 1.00 already supports 30 day history");
 assert(boiler.published.some(p=>p.payload==="boiler_history|days30"));
+// New Boiler v1.05 publishes exactly one sensor per independent bus.
+const boiler4=buildContext();
+const boiler4Id="boiler-112233445566";
+boiler4.message(boiler4Id,"status","online");
+boiler4.message(boiler4Id,"health",{
+  meter:"BOILER",device_type:"BOILER",firmware:"1.05",
+  meter_ok:true,read_attempted:true,has_sample:true,rssi:-48
+});
+boiler4.message(boiler4Id,"state",{
+  meter:"BOILER",device_type:"BOILER",firmware:"1.05",
+  temp_1:21.5,temp_2:35.7,temp_3:48.9,temp_4:62.3,
+  temp_outside:21.5,temp_middle:35.7,temp_inside:48.9,
+  sensors_ok:true,time:"19:05:00"
+});
+const boiler4Card=boiler4.nodes.get("devicesGrid").innerHTML;
+for(const [label,value] of [
+  ["Θ1 · GPIO5","21,5"],["Θ2 · GPIO6","35,7"],
+  ["Θ3 · GPIO7","48,9"],["Θ4 · GPIO8","62,3"]]){
+  assert(boiler4Card.includes(label),`Missing boiler probe: ${label}`);
+  assert(boiler4Card.includes(value),`Missing temperature ${value}`);
+}
+assert(!boiler4Card.includes('data-action="fan"'),"Boiler must remain monitoring only");
+boiler4.message(boiler4Id,"state",{
+  meter:"BOILER",device_type:"BOILER",firmware:"1.05",
+  temp_1:22.1,temp_2:40,temp_3:50,temp_4:null,time:"19:06:00"
+});
+const boiler4Missing=boiler4.nodes.get("devicesGrid").innerHTML;
+assert(boiler4Missing.includes("Θ4 · GPIO8"),"Disconnected fourth probe remains visible");
+assert(boiler4Missing.includes(">—</b>"),"Disconnected probe displays dash, never zero");
+console.log("Boiler v1.05 4x independent DS18B20, GPIO5..GPIO8 UI and disconnect status PASS");
+
 console.log("Boiler 3xDS18B20 discovery, read-only UI, blocked controls and history PASS");
 
 console.log("Ventilation v1.03 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
