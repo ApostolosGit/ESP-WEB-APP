@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.77'));
-assert(appSource.includes('const APP_VERSION = "5.77"'));
+assert(html.includes('v=5.78'));
+assert(appSource.includes('const APP_VERSION = "5.78"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
@@ -303,7 +303,7 @@ assert(boilerCard.includes('data-action="admin" data-device="'+boilerId+'"') &&
 assert(appSource.includes('ui.adminDialog.classList.toggle("boiler-ota-only"'),
   "Boiler firmware panel must hide all control/settings sections");
 assert(boiler.app.otaManifestUrlForDevice(boiler.app.devices.get(boilerId))
-  .includes("ESP32-C3-BOILER-OTA/main/manifest-boiler.txt"));
+  .includes("ESP32-OTA.bin/main/manifest-boiler.txt"));
 assert.equal(boiler.app.otaManifestMatchesDevice(
   {meter:"BOILER",file:"Boiler_ESP32C3_V1_02.bin",version:"1.02"},
   boiler.app.devices.get(boilerId)),true);
