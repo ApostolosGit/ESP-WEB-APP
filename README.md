@@ -1,6 +1,14 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.78
+# Energy DDS / JSY / Ventilation — MQTT.app v5.79
 
-## MQTT.app 5.78 — Επίσημο ESP32 OTA repository
+## 5.79 — Boiler four independent DS18B20 inputs
+
+- Boiler firmware [v1.05 source](https://github.com/ApostolosGit/ESP32-C3-BOILER/blob/main/Boiler_ESP32C3_V1_05.ino) uses **GPIO5→Θ1, GPIO6→Θ2, GPIO7→Θ3, GPIO8→Θ4**, with one 4.7k Ω pull-up and one DS18B20 per DQ line.
+- MQTT.app shows four separate live readouts using MQTT state fields `temp_1`, `temp_2`, `temp_3`, `temp_4`; disconnected probes show **—**. Firmware before 1.05 retains its legacy 3-probe layout.
+- OLED shows four live rows; Boiler controls remain disabled. The earlier **two-channel LittleFS history layout remains unchanged for OTA compatibility** (legacy Θ1/Θ3 aliases), so Θ2 and Θ4 are currently live-only and not recorded in the historical charts.
+- GPIO8 is an ESP32-C3 strapping pin and may share an onboard LED circuit. The v1.05 firmware disables its former LED output and the connected fourth sensor must be tested for cold boot and USB download.
+- Application version 5.79 updates app, HTML, service worker and regression tests. Physical four-probe operation and first OTA update must be hardware-verified.
+
+## MQTT.app 5.79 — Επίσημο ESP32 OTA repository
 
 - Boiler OTA binary και manifest από `ApostolosGit/ESP32-OTA.bin`.
 - Boiler με μόνο μετρήσεις, 3x DS18B20, OTA firmware panel χωρίς χειρισμούς.
