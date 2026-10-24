@@ -47,7 +47,7 @@
   // Firmware 1.04 support alone does not mean an OTA image was published.
   const ventilationOtaAvailable = new Map();
   const boilerOtaAvailable = new Map();
-  const BOILER_OTA_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP32-C3-BOILER-OTA/main/";
+  const BOILER_OTA_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP32-OTA.bin/main/";
   let otaAwaitingStart = null;
   let otaSession = null;
   let otaAckTimer = null;
