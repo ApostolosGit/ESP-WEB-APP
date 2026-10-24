@@ -697,7 +697,7 @@
           <div class="device-head-right">
             <span class="rssi-badge">RSSI ${escapeHtml(rssi)}</span>
             <div class="device-actions">
-              ${boiler ? "" : `<button class="small-btn ghost" type="button" data-action="admin" data-device="${escapeHtml(device.id)}">ΡΥΘΜΙΣΕΙΣ</button>`}
+              <button class="small-btn ghost" type="button" data-action="admin" data-device="${escapeHtml(device.id)}">${boiler ? "FIRMWARE / OTA" : "ΡΥΘΜΙΣΕΙΣ"}</button>
               <button class="small-btn" type="button" data-action="history" data-device="${escapeHtml(device.id)}">ΓΡΑΦΗΜΑΤΑ</button>
               <button class="small-btn refresh-device" type="button" data-action="refresh" data-device="${escapeHtml(device.id)}">↻ UPDATE</button>
             </div>
@@ -1365,7 +1365,7 @@
 
       const isNewer = versionComparison > 0;
       if (["VENTILATION","BOILER"].includes(meterType(device)) && !isNewer) {
-        setAdminStatus("Δεν υπάρχει νεότερο Ventilation firmware προς OTA. Δεν επιτρέπεται επανεγκατάσταση ή downgrade.", "error");
+        setAdminStatus("Δεν υπάρχει νεότερο firmware προς OTA. Δεν επιτρέπεται επανεγκατάσταση ή downgrade.", "error");
         return;
       }
       const newBadge = isNewer ? " · NEW!" : "";
@@ -1374,7 +1374,7 @@
 
       const confirmed = window.confirm(
         `OTA αναβάθμιση ${id}\n\n` +
-        `Τρέχουσα έκδοση ESP8266: ${currentFw}\n` +
+        `Τρέχουσα έκδοση συσκευής: ${currentFw}\n` +
         `Available OTA: ${manifest.version}${oledText}${newBadge}\n\n` +
         "Ο ESP θα αποσυνδεθεί προσωρινά από MQTT και θα επανεκκινήσει. Συνέχεια;"
       );
@@ -1389,7 +1389,7 @@
       // Καμία MQTT OTA εντολή δεν αποστέλλεται πριν επαληθευτεί το PIN.
       openOtaPinDialog(id, manifest);
       setAdminStatus(
-        `ESP8266 ${currentFw} → OTA ${manifest.version}${newBadge} · αναμονή PIN.`
+        `Firmware ${currentFw} → OTA ${manifest.version}${newBadge} · αναμονή PIN.`
       );
     } catch (err) {
       const message = err && err.message ? err.message : String(err);
@@ -2061,7 +2061,7 @@
   function openAdmin(id) {
     const device = devices.get(id);
     if (!device) return;
-    if (meterType(device)==="BOILER") { showToast("Το Boiler λειτουργεί μόνο για μετρήσεις. Οι χειρισμοί είναι απενεργοποιημένοι."); return; }
+    ui.adminDialog.classList.toggle("boiler-ota-only",meterType(device)==="BOILER");
 
     adminTargetId = id;
     utilityHistoryRows = [];
@@ -2077,7 +2077,9 @@
     renderOtaAvailability(device, null, true);
 
     const supportsEntryTypes = firmwareAtLeast(fw, 4, 0);
-    if (meterType(device) === "VENTILATION") {
+    if(meterType(device)==="BOILER"){
+      setAdminStatus("Boiler: μόνο αναβάθμιση firmware · χωρίς χειρισμούς.","ok");
+    } else if (meterType(device) === "VENTILATION") {
       setAdminStatus("Έλεγχος εξαερισμού μέσω MQTT · αναζήτηση διαθέσιμου OTA.", "ok");
     } else setAdminStatus(
       supportsEntryTypes
@@ -2092,7 +2094,7 @@
     updateAdminButtons();
     ui.adminDialog.showModal();
 
-    if (meterType(device) !== "VENTILATION" && firmwareAtLeast(fw, 3, 0) && client && client.connected) {
+    if (!isTemperatureDevice(device) && firmwareAtLeast(fw, 3, 0) && client && client.connected) {
       setTimeout(() => refreshUtilityRows(id, false), 0);
     }
     if (client && client.connected) {
@@ -2113,7 +2115,7 @@
     const state = device ? (device.state || {}) : {};
     const supportsV3 = Boolean(device && firmwareAtLeast(state.firmware, 3, 0));
     const supportsTypes = Boolean(device && firmwareAtLeast(state.firmware, 4, 0));
-    const supportsRestart = Boolean(device && (meterType(device) === "VENTILATION" || firmwareAtLeast(state.firmware, 4, 3)));
+    const supportsRestart = Boolean(device && meterType(device) !== "BOILER" && (meterType(device) === "VENTILATION" || firmwareAtLeast(state.firmware, 4, 3)));
 
     if (ui.utilityHistoryBtn) {
       ui.utilityHistoryBtn.disabled = !adminTargetId || busy || !connected || !supportsV3;
@@ -2149,14 +2151,19 @@
     if (ui.otaUpdateBtn) {
       const fwForOta = String(state.firmware || "");
       const isVentilation = device && meterType(device) === "VENTILATION";
+      const isBoiler = device && meterType(device) === "BOILER";
       const available = isVentilation ? ventilationOtaAvailable.get(device.id) : null;
       const canVentilationOta = isVentilation && firmwareAtLeast(fwForOta,1,4) &&
         Boolean(available && available.currentFirmware === fwForOta &&
         compareFirmwareVersions(available.version,fwForOta)>0);
+      const availableBoiler=isBoiler?boilerOtaAvailable.get(device.id):null;
+      const canBoilerOta=isBoiler&&firmwareAtLeast(fwForOta,1,1)&&
+        Boolean(availableBoiler && availableBoiler.currentFirmware===fwForOta &&
+        compareFirmwareVersions(availableBoiler.version,fwForOta)>0);
       ui.otaUpdateBtn.disabled =
         !adminTargetId || busy || !connected || otaManifestLoading ||
-        (isVentilation ? !canVentilationOta : !firmwareAtLeast(fwForOta,2,29));
-      ui.otaUpdateBtn.title = isVentilation && !canVentilationOta
+        (isBoiler ? !canBoilerOta : (isVentilation ? !canVentilationOta : !firmwareAtLeast(fwForOta,2,29)));
+      ui.otaUpdateBtn.title = isBoiler && !canBoilerOta ? "Δεν έχει δημοσιευθεί επιβεβαιωμένο νεότερο Boiler OTA." : isVentilation && !canVentilationOta
         ? "Δεν υπάρχει επιβεβαιωμένο νεότερο OTA firmware Ventilation."
         : "Έλεγχος και επιβεβαίωση OTA αναβάθμισης.";
     }
