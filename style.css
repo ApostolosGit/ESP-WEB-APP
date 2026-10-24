@@ -1460,3 +1460,10 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .vent-history-plot .vent-history-grid line {
   vector-effect: non-scaling-stroke;
 }
+
+/* Boiler is monitor-only: Firmware/OTA view exposes no control, restart,
+   meter readings editor or tariff/settings commands. */
+#adminDialog.boiler-ota-only #utilityReadingSettings,
+#adminDialog.boiler-ota-only #dualZoneSettings,
+#adminDialog.boiler-ota-only #ventilationSettings,
+#adminDialog.boiler-ota-only .restart-settings { display: none !important; }
