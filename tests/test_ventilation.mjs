@@ -297,8 +297,23 @@ const boilerCard = boiler.nodes.get("devicesGrid").innerHTML;
 assert(boilerCard.includes("Boiler") && boilerCard.includes("35,2") &&
   boilerCard.includes("42,7") && boilerCard.includes("49,1"),
   "Boiler renders three temperature readings");
-assert(!boilerCard.includes('data-action="admin" data-device="'+boilerId+'"'),
-  "Boiler must not expose controls/settings");
+assert(boilerCard.includes('data-action="admin" data-device="'+boilerId+'"') &&
+  boilerCard.includes("FIRMWARE / OTA"),
+  "Boiler must offer a firmware-only settings entry");
+assert(appSource.includes('ui.adminDialog.classList.toggle("boiler-ota-only"'),
+  "Boiler firmware panel must hide all control/settings sections");
+assert(boiler.app.otaManifestUrlForDevice(boiler.app.devices.get(boilerId))
+  .includes("ESP32-C3-BOILER-OTA/main/manifest-boiler.txt"));
+assert.equal(boiler.app.otaManifestMatchesDevice(
+  {meter:"BOILER",file:"Boiler_ESP32C3_V1_02.bin",version:"1.02"},
+  boiler.app.devices.get(boilerId)),true);
+assert.equal(boiler.app.otaManifestMatchesDevice(
+  {meter:"VENTILATION",file:"Ventilation_ESP8266_V1_08.bin",version:"1.08"},
+  boiler.app.devices.get(boilerId)),false);
+boiler.app.selectOtaDevice(boilerId);
+boiler.app.renderOtaAvailability(boiler.app.devices.get(boilerId),null,true);
+assert(boiler.nodes.get("otaUpdateBtn").disabled,
+  "Boiler OTA disabled until a newer matching release is available");
 assert.equal(boiler.app.sendVentCommand(boilerId,"vent_fan|on"),false);
 assert.equal(boiler.app.sendVentCommand(boilerId,"vent_mode|manual"),false);
 const beforeBoilerHistory=boiler.published.length;
