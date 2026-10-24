@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1320">
-  <meta name="description" content="Energy DDS / JSY / Ventilation dashboard μέσω HiveMQ MQTT WebSocket">
+  <meta name="description" content="Energy DDS / JSY / Ventilation / Boiler dashboard μέσω HiveMQ MQTT WebSocket">
   <title>Energy DDS / JSY</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.75">
+  <link rel="stylesheet" href="style.css?v=5.76">
 </head>
 <body>
   <div class="app-shell">
@@ -49,7 +49,7 @@
     <main>
       <section id="emptyState" class="empty-state hidden">
         <strong>Δεν υπάρχει online συσκευή.</strong>
-        <span>Συνδέσου στο HiveMQ και η εφαρμογή θα εμφανίσει αυτόματα DDS238, JSY-MK-333 και VENTILATION που επικοινωνούν με τον ίδιο MQTT broker.</span>
+        <span>Συνδέσου στο HiveMQ και η εφαρμογή θα εμφανίσει αυτόματα DDS238, JSY-MK-333, VENTILATION και BOILER που επικοινωνούν με τον ίδιο MQTT broker.</span>
         <p>Αν ο εξαερισμός λειτουργεί τοπικά αλλά δεν εμφανίζεται εδώ, άνοιξε το <a href="http://192.168.1.77/mqtt-status" target="_blank" rel="noopener">διαγνωστικό MQTT του ESP8266 (v1.01+)</a> από το ίδιο LAN. Χρειάζεται <code>mqtt_connected: true</code> και ίδιο HiveMQ με το app.</p>
         <p>Εναλλακτικά, όταν είσαι στο ίδιο Wi-Fi μπορείς να ανοίξεις την <a href="http://192.168.1.77/recovery-update" target="_blank" rel="noopener">τοπική ανάκτηση firmware</a> (απαιτεί Setup PIN). Δεν εξαρτάται από το MQTT.app.</p>
       </section>
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.75</span>
+      <span>MQTT.app. v5.76</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -399,8 +399,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.75"></script>
-  <script src="app.js?v=5.75"></script>
+  <script src="history.js?v=5.76"></script>
+  <script src="app.js?v=5.76"></script>
 </body>
 </html>
 
