@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.79";
+  const APP_VERSION = "5.80";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -908,14 +908,62 @@
       throw new Error("Μη έγκυρο OTA manifest.");
     }
 
-    return {
+    const manifest = {
       version: data.version,
       file: data.file,
       size,
       md5: data.md5.toLowerCase(),
       meter: String(data.meter || "").toUpperCase(),
-      oled: String(data.oled || "")
+      oled: String(data.oled || "").toUpperCase(),
+      application: String(data.application || "").toLowerCase(),
+      platform_version: String(data.platform_version || ""),
+      driver: String(data.driver || "").toUpperCase(),
+      profile: String(data.profile || ""),
+      ota_protocol: Number(data.ota_protocol || 0)
     };
+    if (energyManifestNeedsProfile(manifest) &&
+        (!/^\d+\.\d+(?:\.\d+)?$/.test(manifest.version) || !validEnergyProfile(manifest))) {
+      throw new Error("Το EnergyMeter manifest δεν περιέχει έγκυρο προφίλ firmware.");
+    }
+    return manifest;
+  }
+
+  function energyManifestNeedsProfile(manifest) {
+    const energyMeter = /^(DDS238|JSY-MK333|JSY-MK-333|JSY)$/i.test(manifest.meter);
+    return energyMeter && (firmwareAtLeast(manifest.version, 6, 0) || Boolean(manifest.application || manifest.profile));
+  }
+
+  function validEnergyProfile(identity) {
+    const driver = identity.driver;
+    const display = identity.oled === "SSD1309" ? "ssd1309" : (identity.oled === "NONE" ? "none" : "");
+    return identity.application === "energymeter" &&
+      /^(DDS238|JSY-MK333)$/.test(driver) && display !== "" &&
+      identity.profile === `energymeter-${driver.toLowerCase()}-${display}` &&
+      /^\d+\.\d+(?:\.\d+)?$/.test(identity.platform_version || "") &&
+      identity.ota_protocol === 2;
+  }
+
+  function energyDeviceIdentity(device) {
+    const state = device.state || {};
+    const health = device.health || {};
+    // A previous firmware's retained identity must not label a newer state.
+    const current = String(state.firmware || health.firmware || "");
+    const frame = String(health.firmware || "") === current ? {...state, ...health} : state;
+    const identity = {
+      application: String(frame.application || "").toLowerCase(),
+      platform_version: String(frame.platform_version || ""),
+      driver: String(frame.driver || "").toUpperCase(),
+      oled: String(frame.oled || "").toUpperCase(),
+      profile: String(frame.profile || ""),
+      ota_protocol: Number(frame.ota_protocol || 0)
+    };
+    const expectedDriver = meterType(device) === "DDS" ? "DDS238" : "JSY-MK333";
+    return validEnergyProfile(identity) && identity.driver === expectedDriver ? identity : null;
+  }
+
+  function energyDeviceNeedsProfile(device) {
+    return !isTemperatureDevice(device) &&
+      (firmwareAtLeast(device.state?.firmware, 6, 0) || firmwareAtLeast(device.health?.firmware, 6, 0));
   }
 
   function otaManifestMatchesDevice(manifest, device) {
@@ -933,12 +981,29 @@
     if (!/^(DDS238|JSY-MK333|JSY-MK-333|JSY)$/i.test(manifest.meter)) return false;
     if (manifest.meter.includes("JSY") && type !== "JSY") return false;
     if (manifest.meter.includes("DDS") && type !== "DDS") return false;
+    const identity = energyDeviceIdentity(device);
+    if (energyManifestNeedsProfile(manifest)) {
+      if (!validEnergyProfile(manifest)) return false;
+      if ((type === "DDS" ? "DDS238" : "JSY-MK333") !== manifest.driver) return false;
+      // Older EnergyMeter firmware cannot report its OLED. The explicit SSD1309
+      // confirmation at installation is required for this one-time transition.
+      if (!energyDeviceNeedsProfile(device)) return manifest.oled === "SSD1309";
+      return identity !== null && identity.profile === manifest.profile;
+    }
+    if (energyDeviceNeedsProfile(device)) return false;
     return true;
   }
 
   function otaManifestUrlForDevice(device) {
     const type = meterType(device);
     if(type==="BOILER")return BOILER_OTA_BASE_URL+"manifest-boiler.txt";
+    if (!isTemperatureDevice(device) && energyDeviceNeedsProfile(device)) {
+      const identity = energyDeviceIdentity(device);
+      if (!identity) throw new Error("Αναμονή πλήρους ταυτότητας EnergyMeter. Ζήτησε ενημέρωση της συσκευής.");
+      if (identity.oled === "NONE") {
+        return OTA_MANIFEST_BASE_URL + (type === "DDS" ? "manifest-dds-no-oled.txt" : "manifest-jsy-no-oled.txt");
+      }
+    }
     const file = type === "VENTILATION" ? "manifest-ventilation.txt" :
       (type === "DDS" ? "manifest-dds.txt" : "manifest-jsy.txt");
     return OTA_MANIFEST_BASE_URL + file;
@@ -975,6 +1040,11 @@
     const parts = [
       `<span class="ota-current-line">Τρέχον firmware: <b>${escapeHtml(currentFw)}</b></span>`
     ];
+    if (!isTemperatureDevice(device)) {
+      const identity = energyDeviceIdentity(device);
+      if (identity) parts.push(`<span class="ota-checking-line">${escapeHtml(identity.driver)} · ${escapeHtml(identity.oled === "NONE" ? "Χωρίς OLED" : identity.oled)} · Platform ${escapeHtml(identity.platform_version)}</span>`);
+      else if (energyDeviceNeedsProfile(device)) parts.push('<span class="ota-checking-line">Αναμονή πλήρους ταυτότητας firmware από τη συσκευή.</span>');
+    }
 
     const hasNewer = Boolean(
       manifest &&
@@ -1001,10 +1071,13 @@
     } else if (checking) {
       parts.push('<span class="ota-checking-line">Έλεγχος διαθέσιμης έκδοσης…</span>');
     } else if (checkFailed) {
+      const headlessEnergy = !isTemperatureDevice(device) && energyDeviceIdentity(device)?.oled === "NONE";
       parts.push(isBoiler
         ? '<span class="ota-checking-line">Δεν έχει δημοσιευτεί ακόμη νέο Boiler OTA στον ξεχωριστό OTA server.</span>'
         : isVentilation
         ? '<span class="ota-checking-line">Δεν υπάρχει δημοσιευμένο Ventilation OTA ή δεν ήταν δυνατός ο έλεγχος.</span>'
+        : headlessEnergy
+        ? '<span class="ota-checking-line">Δεν υπάρχει διαθέσιμη OTA έκδοση για το προφίλ χωρίς OLED.</span>'
         : '<span class="ota-checking-line">Update check unavailable</span>');
     } else {
       parts.push('<span class="ota-none-line">No new updates</span>');
@@ -1202,16 +1275,21 @@
       if (client && client.connected) requestUpdate(id, false);
     }, OTA_POLL_MS);
 
+    const energyProfileUpdate = energyManifestNeedsProfile(pending.manifest);
+    const sessionTimeout = energyProfileUpdate ||
+      (meterType(devices.get(id) || {id,state:{}}) === "VENTILATION" &&
+       firmwareAtLeast(pending.fromVersion,1,6)) ? 300000 : OTA_TOTAL_TIMEOUT_MS;
     otaTimeoutTimer = setTimeout(() => {
       if (!otaSession || otaSession.id !== id) return;
       const device = devices.get(id);
       const lastFw = device ? String((device.state || {}).firmware || "?") : "?";
       failActiveOta(
-        "Δεν επιβεβαιώθηκε η νέα έκδοση μέσα σε 3 λεπτά.",
+        sessionTimeout === 300000
+          ? "Δεν επιβεβαιώθηκε η νέα έκδοση μέσα σε 5 λεπτά."
+          : "Δεν επιβεβαιώθηκε η νέα έκδοση μέσα σε 3 λεπτά.",
         `Τελευταία γνωστή έκδοση: ${lastFw}. Έλεγξε OLED / Recovery / MQTT.`
       );
-    }, meterType(devices.get(id) || {id,state:{}}) === "VENTILATION" &&
-       firmwareAtLeast(pending.fromVersion,1,6) ? 300000 : OTA_TOTAL_TIMEOUT_MS);
+    }, sessionTimeout);
 
     setTimeout(() => {
       if (otaSession && otaSession.id === id) requestUpdate(id, false);
@@ -1265,6 +1343,15 @@
       return;
     }
 
+    const firmwareUrl = (meterType(device)==="BOILER"?BOILER_OTA_BASE_URL:OTA_MANIFEST_BASE_URL) + encodeURIComponent(manifest.file);
+    let command;
+    try {
+      command = remoteOtaCommand(device, manifest, firmwareUrl, ui.otaPinInput.value.trim());
+    } catch (error) {
+      setAdminStatus(error.message, "error");
+      return;
+    }
+
     clearOtaAckTimer();
 
     const fromVersion = String((device.state || {}).firmware || "?");
@@ -1281,11 +1368,6 @@
     setAdminStatus(
       `Αποστολή OTA ${fromVersion} → ${manifest.version}. Αναμονή επιβεβαίωσης από ESP8266…`
     );
-
-    const firmwareUrl = (meterType(device)==="BOILER"?BOILER_OTA_BASE_URL:OTA_MANIFEST_BASE_URL) + encodeURIComponent(manifest.file);
-    const ventilation = ["VENTILATION","BOILER"].includes(meterType(device));
-    const command = `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}` +
-      (ventilation ? `|${ui.otaPinInput.value.trim()}` : "");
 
     const sent = publish(id, "admin/request", command, (err) => {
       if (!err) return;
@@ -1308,6 +1390,19 @@
         "Timeout 12s στο admin/response."
       );
     }, OTA_ACK_TIMEOUT_MS);
+  }
+
+  function remoteOtaCommand(device, manifest, firmwareUrl, pin = "") {
+    if (!otaManifestMatchesDevice(manifest, device)) throw new Error("Το προφίλ OTA δεν αντιστοιχεί πλέον στη συσκευή.");
+    if (isTemperatureDevice(device)) return `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}|${pin}`;
+    if (energyDeviceNeedsProfile(device)) {
+      const identity = energyDeviceIdentity(device);
+      if (!identity || identity.ota_protocol !== 2) throw new Error("Δεν επιβεβαιώθηκε το πρωτόκολλο OTA της συσκευής.");
+      return `ota_https_v2|${manifest.size}|${manifest.md5}|${firmwareUrl}|${identity.profile}`;
+    }
+    if (energyManifestNeedsProfile(manifest) && manifest.legacySsdConfirmed !== true)
+      throw new Error("Απαιτείται επιβεβαίωση οθόνης SSD1309 για την πρώτη αναβάθμιση.");
+    return `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}`;
   }
 
   async function startRemoteOta(id) {
@@ -1384,10 +1479,16 @@
 
       renderOtaAvailability(device, manifest, false);
 
+      const legacySsdTransition = energyManifestNeedsProfile(manifest) && !energyDeviceNeedsProfile(device);
+      const legacyDisplayNotice = legacySsdTransition
+        ? "Το τρέχον firmware δεν αναφέρει τον τύπο οθόνης. Επιβεβαίωσε ότι αυτή η συσκευή έχει SSD1309. Με SH1106 ή χωρίς OLED μην συνεχίσεις.\n\n"
+        : "";
+
       const confirmed = window.confirm(
         `OTA αναβάθμιση ${id}\n\n` +
         `Τρέχουσα έκδοση συσκευής: ${currentFw}\n` +
         `Available OTA: ${manifest.version}${oledText}${newBadge}\n\n` +
+        legacyDisplayNotice +
         "Ο ESP θα αποσυνδεθεί προσωρινά από MQTT και θα επανεκκινήσει. Συνέχεια;"
       );
 
@@ -1399,7 +1500,7 @@
       // v1.11: πρώτα εμφανίζονται current/available version και NEW!,
       // μετά η τελική επιβεβαίωση και τελευταίο βήμα το PIN.
       // Καμία MQTT OTA εντολή δεν αποστέλλεται πριν επαληθευτεί το PIN.
-      openOtaPinDialog(id, manifest);
+      openOtaPinDialog(id, {...manifest, legacySsdConfirmed: legacySsdTransition});
       setAdminStatus(
         `Firmware ${currentFw} → OTA ${manifest.version}${newBadge} · αναμονή PIN.`
       );
@@ -2311,6 +2412,9 @@
       low_heap_preflight: "Ανεπαρκής ελεύθερη ή συνεχόμενη μνήμη για HTTPS OTA.",
       http_range_status: "Ο OTA server δεν επέστρεψε HTTP 206 (Range).",
       http_range_length: "Λανθασμένο μήκος τμήματος λήψης OTA.",
+      profile_mismatch: "Το προφίλ firmware δεν αντιστοιχεί στη συσκευή.",
+      ota_protocol_required: "Απαιτείται η τρέχουσα έκδοση του app για OTA με έλεγχο προφίλ.",
+      invalid_parameters: "Η εντολή OTA περιέχει μη έγκυρες παραμέτρους.",
       https_disconnected: "Διακόπηκε η λήψη HTTPS firmware.",
       https_read_timeout: "Η λήψη HTTPS δεν έδωσε δεδομένα στο όριο χρόνου.",
       flash_md5_verify: "Αποτυχία επαλήθευσης MD5 ή εγγραφής flash.",
@@ -2995,9 +3099,21 @@
     }
   }
 
-  function confirmOtaFromHealth(device) {
+  function confirmOtaFromHealth(device, retained = false) {
     const session = otaSession;
-    if (!session || !device.health || compareFirmwareVersions(device.health.firmware, session.targetVersion) !== 0) return;
+    if (retained || !session || !device.health || compareFirmwareVersions(device.health.firmware, session.targetVersion) !== 0) return;
+    if (energyManifestNeedsProfile(session.manifest)) {
+      // A measurement can report a version without identifying its build.
+      // Only a live post-start health frame from the same ESP proves the
+      // expected version AND profile after the observed OTA disconnection.
+      if (device.id !== session.id || !Number.isFinite(session.startedAt) ||
+          !Number.isFinite(device.healthReceivedAt) || device.healthReceivedAt < session.startedAt ||
+          !session.sawOffline || device.health.firmware !== session.targetVersion) return;
+      const reported = {...device, state:device.health};
+      if (!otaManifestMatchesDevice(session.manifest, reported)) return;
+      completeActiveOta(device.health.firmware);
+      return;
+    }
     if (device.id === session.id) { completeActiveOta(device.health.firmware); return; }
     // One-time transition from the old shared profile topic to hardware identity.
     const suffix = device.id.startsWith(session.id + "-") ? device.id.slice(session.id.length + 1) : "";
@@ -3027,6 +3143,7 @@
     if (retained) {
       if (device.statusOnline !== false) queueDeviceProbe(device);
     } else {
+      device.healthReceivedAt = Date.now();
       confirmDeviceLive(device);
       // A failed/initial sensor legitimately responds with health instead of state.
       // A healthy heartbeat confirms the ESP, but not a new measurement.
@@ -3278,7 +3395,7 @@
       const device = ensureDevice(parsed.id);
 
       if (parsed.suffix === "health") {
-        if (receiveDeviceHealth(device, text, packet.retain === true) && packet.retain !== true) confirmOtaFromHealth(device);
+        if (receiveDeviceHealth(device, text, packet.retain === true) && packet.retain !== true) confirmOtaFromHealth(device, false);
         return;
       }
       if (parsed.suffix === "status") {
@@ -3295,7 +3412,7 @@
         renderAll();
 
         if (otaSession && otaSession.id === device.id) {
-          if (!device.statusOnline) {
+          if (!device.statusOnline && (!energyManifestNeedsProfile(otaSession.manifest) || packet.retain !== true)) {
             otaSession.sawOffline = true;
             ui.otaProgressStatus.textContent =
               "Ο ESP8266 είναι προσωρινά offline. Η αναβάθμιση / επανεκκίνηση βρίσκεται σε εξέλιξη…";
@@ -3320,7 +3437,9 @@
           if (otaSession && otaSession.id === device.id) {
             const currentFw = String((device.state || {}).firmware || "?");
             if (compareFirmwareVersions(currentFw, otaSession.targetVersion) === 0) {
-              completeActiveOta(currentFw);
+              if (energyManifestNeedsProfile(otaSession.manifest)) {
+                updateOtaRunningDetails("Η έκδοση αναφέρθηκε. Αναμονή επιβεβαίωσης του προφίλ firmware…");
+              } else completeActiveOta(currentFw);
             } else if (
               otaSession.sawOffline &&
               otaSession.sawOnlineAfterStart &&
@@ -3703,7 +3822,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.79", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.80", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {

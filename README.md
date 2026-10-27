@@ -1,4 +1,24 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.79
+# Energy DDS / JSY / Ventilation — MQTT.app v5.80
+
+
+## 5.80 — EnergyMeter 6.00 OTA profiles
+
+EnergyMeter v6.00 reports its application, platform version, normalized driver,
+display, exact build profile and OTA protocol in its MQTT health frame. The app
+matches those fields before offering an update and sends the profile-aware
+`ota_https_v2` command to v6 devices. DDS238 and JSY-MK333 SSD1309 releases retain
+the existing default manifest URLs. Devices without OLED use separate manifest
+URLs and never fall back to an SSD1309 image; a missing headless release is shown
+as unavailable.
+
+For the first transition from v5.xx, the app keeps the compatible legacy OTA
+command and explicitly asks the user to confirm that the installed display is
+SSD1309 before showing the existing PIN dialog. Old firmware cannot identify its
+display. A v6 update succeeds in the UI only after a fresh health frame from the
+same device reports both the requested version and profile following its OTA
+disconnection. Retained frames, a plain version-only measurement and MQTT online
+alone cannot complete that update. Other applications keep their existing OTA
+contracts. Installation still starts only after user confirmation and PIN.
 
 ## 5.79 — Boiler four independent DS18B20 inputs
 
