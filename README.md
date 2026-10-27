@@ -1,4 +1,20 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.80
+# Energy DDS / JSY / Ventilation — MQTT.app v5.81
+
+## 5.81 — Ventilation 2.00 on the common platform
+
+- Ventilation 1.04+ can install **2.00** through its existing MQTT OTA command
+  and PIN. The confirmation explains the local address **192.168.1.81** and
+  that Ventilation has no OLED. The versioned binary filename remains compatible
+  with installed 1.xx downloaders.
+- Ventilation 2.xx reports its application/driver/display profile. Later OTA
+  uses the common `ota_https_v2` command and requires the exact no-OLED profile;
+  incomplete, incompatible or stale identity cannot fall back to the old command.
+- Both the first migration and later profile updates allow five minutes for the
+  four-minute firmware transfer plus reconnect. Success requires live health from
+  the same controller reporting the expected version and profile after the
+  observed OTA disconnection; cached state or retained health cannot confirm it.
+- Ventilation remains newer-version-only, with the existing confirmation/PIN
+  flow. EnergyMeter and Boiler OTA contracts retain their existing behavior.
 
 
 ## 5.80 — EnergyMeter 6.00 OTA profiles
