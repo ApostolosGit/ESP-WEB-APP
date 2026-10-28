@@ -2045,7 +2045,7 @@
     }).join("");
 
     const liveCircle = (key,color) => live && Number.isFinite(live[key])
-      ? `<circle class="vent-live-dot" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
+      ? `<circle class="vent-live-dot vent-hover-target" data-hover-name="${key==="inside"?"Μέσα · ζωντανά":"Έξω · ζωντανά"}" data-hover-color="${color}" data-hover-points="${escapeHtml(JSON.stringify([[+xFor(live.index).toFixed(2),+yFor(live[key]).toFixed(2),live[key],live.time]]))}" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
       : "";
     const linePath = (key,sourceRows) => {
       let d = "", active = false;
