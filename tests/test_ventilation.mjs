@@ -203,7 +203,7 @@ for(let offset=0;offset<96;offset+=8){
 b.message(vid,"vent/history","E|current");
 assert.equal(b.app.getHistory().complete,true);
 const liveSvg=b.nodes.get("ventHistoryChart").innerHTML;
-assert(liveSvg.includes('class="vent-live-dot"') || !b.app.getHistory().live,
+assert(liveSvg.includes('class="vent-live-dot vent-hover-target"') || !b.app.getHistory().live,
   "Render a live temperature dot if a valid ESP time is present");
 b.message(vid,"state",{...b.app.devices.get(vid).state,time:"10:30:15",
   temp_inside:25.25,temp_outside:16.75});
