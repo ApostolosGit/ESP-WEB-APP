@@ -1818,6 +1818,10 @@
     $("ventHistoryStatus").textContent =
       `${h.id} · 30 ημέρες · ${count}/30 ημερήσιες εγγραφές${h.complete?" · ολοκληρώθηκε":" · λήψη…"}`;
     const rows=h.dailyRows||[];
+    // Ventilation daily MQTT slots arrive newest first. Only its 30-day chart
+    // should run oldest -> newest; leave Boiler and the underlying table unchanged.
+    const ventilation30Days=meterType(devices.get(h.id))==="VENTILATION";
+    const plotRows=ventilation30Days?rows.slice().reverse():rows;
     const fields=["insideMin","insideMax","insideAvg","outsideMin","outsideMax","outsideAvg"];
     const numeric=rows.flatMap(r=>r?fields.map(k=>r[k]):[]).filter(Number.isFinite);
     if(!numeric.length){
@@ -1841,8 +1845,11 @@
     for(let i=0;i<30;i++){
       const xx=x(i);
       grid.push(`<line class="vent-grid-day" x1="${xx.toFixed(2)}" x2="${xx.toFixed(2)}" y1="${T}" y2="${B}" stroke="currentColor" stroke-opacity=".09"/>`);
-      if(i%3===0)
-        grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${ventDayLabel(rows[i]?.dayKey).slice(5)}</text>`);
+      // Every other day for Ventilation, plus the newest day on the right.
+      // Skip the penultimate label to avoid overlapping the final date.
+      const showDate=ventilation30Days?((i%2===0&&i<=26)||i===29):i%3===0;
+      if(showDate)
+        grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${ventDayLabel(plotRows[i]?.dayKey).slice(5)}</text>`);
     }
     const series=[
       ["insideMin","#dc2626","7 5"],["insideMax","#dc2626","7 5"],["insideAvg","#dc2626",""],
@@ -1850,7 +1857,7 @@
     ];
     const path=key=>{
       let d="",active=false;
-      rows.forEach((r,i)=>{
+      plotRows.forEach((r,i)=>{
         const value=r?.[key];
         if(!Number.isFinite(value)){active=false;return;}
         d+=`${active?"L":"M"}${x(i).toFixed(2)},${y(value).toFixed(2)} `;

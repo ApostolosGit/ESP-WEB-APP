@@ -268,7 +268,7 @@ assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-yeste
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα χθες °C"));
 // 30-day daily aggregates: 10 packets * 3 records, with no invented history.
 assert.equal(b.app.requestVentHistory(vid,"days30"),true);
-const day=(i)=>`${50500-i},14.5,23.0,19.2,12.0,20.0,16.1`;
+const day=(i)=>`${50500-i},14.5,23.0,${(19.2+i/10).toFixed(1)},12.0,20.0,16.1`;
 for(let offset=0;offset<30;offset+=3){
   b.message(vid,"vent/history",`D|${offset}|${day(offset)}|${day(offset+1)}|${day(offset+2)}`);
 }
@@ -277,6 +277,22 @@ assert(b.app.getHistory().complete,"30-day data complete");
 assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-daily-series"/g)||[]).length,6,
   "Six min/max/average daily lines");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα μέση °C"));
+const dailySvg=b.nodes.get("ventHistoryChart").innerHTML;
+const dayLabels=[...dailySvg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\/text>/g)]
+  .map(m=>m[1]);
+assert.equal((dailySvg.match(/class="vent-grid-day"/g)||[]).length,30,
+  "Ventilation 30-day axis keeps one vertical grid line per day");
+assert.equal(dayLabels.length,15,"Show every other day, keeping the newest date visible");
+assert.deepEqual(dayLabels.slice(0,3),["03-13","03-15","03-17"],
+  "Oldest Ventilation dates must start on the left");
+assert.equal(dayLabels.at(-1),"04-11","Newest date must be at the right edge");
+const insideDailyPath=dailySvg.match(/data-series="insideAvg"\s+d="([^"]+)"/)?.[1];
+assert(insideDailyPath,"Inside average series must be drawn");
+const dailyPoints=[...insideDailyPath.matchAll(/[ML](\d+\.\d+),(\d+\.\d+)/g)];
+assert.equal(Number(dailyPoints[0][1]),70,"Oldest Ventilation point starts on the left");
+assert.equal(Number(dailyPoints.at(-1)[1]),1030,"Newest Ventilation point ends on the right");
+assert(Number(dailyPoints[0][2])<Number(dailyPoints.at(-1)[2]),
+  "Older higher daily average must be graphed before the newer lower average");
 
 
 // Boiler is a SEPARATE type: only 3 DS18B20 readings, no control settings.
@@ -323,6 +339,12 @@ assert(boiler.published.slice(beforeBoilerHistory).some(p=>p.payload==="boiler_h
 assert.equal(boiler.app.requestVentHistory(boilerId,"days30"),true,
   "Boiler firmware 1.00 already supports 30 day history");
 assert(boiler.published.some(p=>p.payload==="boiler_history|days30"));
+boiler.message(boilerId,"boiler/history",`D|0|${day(0)}|${day(1)}|${day(2)}`);
+const boilerDailySvg=boiler.nodes.get("ventHistoryChart").innerHTML;
+const boilerLabels=[...boilerDailySvg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\/text>/g)]
+  .map(m=>m[1]);
+assert.equal(boilerLabels.length,10,"Boiler keeps its original every-third-day labeling");
+assert.equal(boilerLabels[0],"04-11","Boiler keeps its original date ordering");
 // New Boiler v1.05 publishes exactly one sensor per independent bus.
 const boiler4=buildContext();
 const boiler4Id="boiler-112233445566";
