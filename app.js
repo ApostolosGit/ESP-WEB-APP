@@ -629,24 +629,24 @@
 
   function renderBoilerBody(device) {
     const s=device.state || {};
-    const shown=v=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))
-      ? "—" : escapeHtml(formatNumber(v,1))+" °C";
+    const shown=(v,status)=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))
+      ? (status==="not connected" ? "not connected" : "—") : escapeHtml(formatNumber(v,1))+" °C";
     const fourProbeFirmware=firmwareAtLeast(s.firmware,1,5) ||
       Object.prototype.hasOwnProperty.call(s,"temp_4");
     const rows=fourProbeFirmware
       ? [
-          ["Θ1 · GPIO5",s.temp_1],
-          ["Θ2 · GPIO6",s.temp_2],
-          ["Θ3 · GPIO7",s.temp_3],
-          ["Θ4 · GPIO21",s.temp_4]
+          ["Θ1 · GPIO5",s.temp_1,s.temp_1_status],
+          ["Θ2 · GPIO6",s.temp_2,s.temp_2_status],
+          ["Θ3 · GPIO7",s.temp_3,s.temp_3_status],
+          ["Θ4 · GPIO21",s.temp_4,s.temp_4_status]
         ]
       : [
           ["Έξω (DS18B20)",s.temp_outside],
           ["Ενδιάμεση (DS18B20)",s.temp_middle],
           ["Μέσα (DS18B20)",s.temp_inside]
         ];
-    const readings=rows.map(([name,value])=>
-      `<div><span>${name}</span><b>${shown(value)}</b></div>`).join("");
+    const readings=rows.map(([name,value,status])=>
+      `<div><span>${name}</span><b>${shown(value,status)}</b></div>`).join("");
     return `
       <section class="vent-dashboard" aria-label="Μετρήσεις Boiler">
         <p class="measurement-notice" role="status">Μόνο παρακολούθηση — όλοι οι χειρισμοί Boiler είναι απενεργοποιημένοι.</p>
@@ -976,7 +976,25 @@
   }
 
   function otaManifestNeedsProfile(manifest) {
-    return energyManifestNeedsProfile(manifest) || ventilationManifestNeedsProfile(manifest);
+    return energyManifestNeedsProfile(manifest) || ventilationManifestNeedsProfile(manifest) ||
+      (manifest.meter === "BOILER" && firmwareAtLeast(manifest.version,3,0));
+  }
+
+  function boilerDeviceIdentity(device) {
+    const state=device.state || {}, health=device.health || {};
+    const current=String(state.firmware || health.firmware || "");
+    // Never accept a profile retained from a different firmware revision.
+    const frame=String(health.firmware || "") === current ? {...state,...health} : state;
+    const identity={
+      application:String(frame.application || "").toLowerCase(),
+      driver:String(frame.driver || "").toUpperCase(),
+      oled:String(frame.oled || "").toUpperCase(),
+      profile:String(frame.profile || ""),
+      ota_protocol:Number(frame.ota_protocol || 0)
+    };
+    return identity.application==="boiler" && identity.driver==="4XDS18B20" &&
+      identity.oled==="SH1106" && identity.ota_protocol===2 &&
+      identity.profile==="esp32c3-boiler-4ds18b20-sh1106" ? identity : null;
   }
 
   function validVentilationProfile(identity) {
@@ -1009,8 +1027,15 @@
     const type = meterType(device);
     if (type === "BOILER") {
       const match=/^Boiler_ESP32C3_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
-      return manifest.meter==="BOILER" && Boolean(match) &&
-        manifest.version===`${Number(match?.[1])}.${match?.[2]}`;
+      if (manifest.meter!=="BOILER" || !match ||
+          manifest.version!==`${Number(match[1])}.${match[2]}`) return false;
+      if (otaManifestNeedsProfile(manifest)) {
+        const identity=boilerDeviceIdentity(device);
+        return Boolean(identity && manifest.application==="boiler" &&
+          manifest.driver==="4XDS18B20" && manifest.oled==="SH1106" &&
+          manifest.ota_protocol===2 && manifest.profile===identity.profile);
+      }
+      return boilerDeviceIdentity(device)===null;
     }
     if (type === "VENTILATION") {
       const match = /^Ventilation_ESP8266_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
@@ -1394,7 +1419,15 @@
       return;
     }
 
-    const firmwareUrl = (meterType(device)==="BOILER"?BOILER_OTA_BASE_URL:OTA_MANIFEST_BASE_URL) + encodeURIComponent(manifest.file);
+    // The hardware-tested Boiler 2.05-test first OTA still uses the original
+    // CommonPlatform filename allowlist. Serve the *identical APP binary* under
+    // that one-time allowed name; the V3 firmware uses the Boiler allowlist.
+    const firstBoilerUpgrade=meterType(device)==="BOILER" &&
+      String(device.state?.firmware||"")==="2.05-test" && manifest.version==="3.00" &&
+      boilerDeviceIdentity(device)?.profile===manifest.profile;
+    const firmwareFile=firstBoilerUpgrade
+      ? "CommonPlatform_ESP32C3_V3_00_APP.bin" : manifest.file;
+    const firmwareUrl=(meterType(device)==="BOILER"?BOILER_OTA_BASE_URL:OTA_MANIFEST_BASE_URL) + encodeURIComponent(firmwareFile);
     let command;
     try {
       command = remoteOtaCommand(device, manifest, firmwareUrl, ui.otaPinInput.value.trim());
@@ -1449,6 +1482,10 @@
       const identity = ventilationDeviceIdentity(device);
       if (!identity) throw new Error("Δεν επιβεβαιώθηκε το προφίλ OTA του Ventilation.");
       return `ota_https_v2|${manifest.size}|${manifest.md5}|${firmwareUrl}|${identity.profile}`;
+    }
+    if (meterType(device)==="BOILER") {
+      const identity=boilerDeviceIdentity(device);
+      if (identity) return `ota_https_v2|${manifest.size}|${manifest.md5}|${firmwareUrl}|${identity.profile}`;
     }
     if (isTemperatureDevice(device)) return `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}|${pin}`;
     if (energyDeviceNeedsProfile(device)) {
