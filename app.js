@@ -1813,6 +1813,73 @@
     const d=new Date(Date.UTC(year,0,1)+day*86400000);
     return d.toISOString().slice(0,10);
   }
+
+  // The hover targets follow real line segments and snap to recorded samples.
+  function ventHoverTarget(d, rows, key, xFor, yFor, xLabel, name, color) {
+    const points=[], isolated=[];
+    rows.forEach((row,i)=>{
+      if(!Number.isFinite(row?.[key]))return;
+      const p=[+xFor(i).toFixed(2),+yFor(row[key]).toFixed(2),row[key],xLabel(i,row)];
+      points.push(p);
+      if(!Number.isFinite(rows[i-1]?.[key])&&!Number.isFinite(rows[i+1]?.[key]))isolated.push(p);
+    });
+    if(!points.length)return "";
+    const attrs='class="vent-hover-target" data-hover-name="'+escapeHtml(name)+
+      '" data-hover-color="'+color+'" data-hover-points="'+escapeHtml(JSON.stringify(points))+'"';
+    return '<path '+attrs+' d="'+d+'" fill="none" stroke="transparent" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" pointer-events="stroke"/>'
+      +isolated.map(p=>'<circle class="vent-standalone-point" cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="'+color+'" pointer-events="none"/>'+
+        '<circle '+attrs+' cx="'+p[0]+'" cy="'+p[1]+'" r="10" fill="transparent" pointer-events="all"/>').join("");
+  }
+  function ventHoverMarkup() {
+    return '<circle class="vent-hover-marker" r="5" fill="#fff" stroke="#334155" stroke-width="2.5" style="display:none" pointer-events="none"/>'+
+      '<g class="vent-hover-tooltip" style="display:none" pointer-events="none">'+
+      '<rect class="vent-hover-box" width="232" height="70" rx="8"/>'+
+      '<text class="vent-hover-title" x="11" y="19"></text>'+
+      '<text class="vent-hover-text vent-hover-x" x="11" y="39"></text>'+
+      '<text class="vent-hover-text vent-hover-y" x="11" y="58"></text></g>';
+  }
+  function bindVentHover() {
+    const svg=$("ventHistoryChart")?.querySelector?.(".vent-history-plot");
+    if(!svg)return;
+    const marker=svg.querySelector(".vent-hover-marker");
+    const tooltip=svg.querySelector(".vent-hover-tooltip");
+    if(!marker||!tooltip)return;
+    const title=tooltip.querySelector(".vent-hover-title");
+    const xText=tooltip.querySelector(".vent-hover-x");
+    const yText=tooltip.querySelector(".vent-hover-y");
+    let lastTarget=null,lastPoints=[];
+    const hide=()=>{marker.style.display="none";tooltip.style.display="none";};
+    svg.addEventListener("pointermove",event=>{
+      if(event.pointerType==="touch")return;
+      const target=event.target.closest?.(".vent-hover-target");
+      if(!target||!svg.contains(target)){hide();return;}
+      const matrix=svg.getScreenCTM();
+      if(!matrix){hide();return;}
+      if(target!==lastTarget){
+        lastTarget=target;
+        try{lastPoints=JSON.parse(target.dataset.hoverPoints||"[]");}
+        catch(_){lastPoints=[];}
+      }
+      if(!lastPoints.length){hide();return;}
+      const cursor=svg.createSVGPoint();
+      cursor.x=event.clientX;cursor.y=event.clientY;
+      const position=cursor.matrixTransform(matrix.inverse());
+      const point=lastPoints.reduce((best,p)=>Math.abs(p[0]-position.x)<Math.abs(best[0]-position.x)?p:best);
+      marker.setAttribute("cx",point[0]);marker.setAttribute("cy",point[1]);
+      marker.setAttribute("stroke",target.dataset.hoverColor||"#334155");
+      title.textContent=target.dataset.hoverName||"Θερμοκρασία";
+      xText.textContent="X: "+point[3];
+      yText.textContent="Y: "+Number(point[2].toFixed(2)).toLocaleString("el-GR",{maximumFractionDigits:2})+" °C";
+      const view=svg.viewBox.baseVal;
+      const tx=Math.min(Math.max(4,point[0]+13),view.width-236);
+      const ty=Math.max(4,Math.min(point[1]>=88?point[1]-80:point[1]+14,view.height-74));
+      tooltip.setAttribute("transform","translate("+tx+","+ty+")");
+      marker.style.display="";tooltip.style.display="";
+    });
+    svg.addEventListener("pointerleave",hide);
+    svg.addEventListener("pointercancel",hide);
+  }
+
   function renderVent30Days(h) {
     const count=h.seen.size*3;
     $("ventHistoryStatus").textContent =
@@ -1883,10 +1950,20 @@
       ${series.map(([key,color,dash])=>`<path class="vent-daily-series" data-series="${key}"
         d="${path(key)}" fill="none" stroke="${color}" ${dash?`stroke-dasharray="${dash}"`:""}
         stroke-width="2.4"/>`).join("")}
+      <g class="vent-hover-tracks">
+        ${series.map(([key,color])=>{
+          const group=key.startsWith("inside")?"Μέσα":"Έξω";
+          const kind=key.endsWith("Min")?"ελάχιστη":key.endsWith("Max")?"μέγιστη":"μέση";
+          return ventHoverTarget(path(key),plotRows,key,x,y,
+            (_,row)=>ventDayLabel(row?.dayKey),group+" · "+kind,color);
+        }).join("")}
+      </g>
+      ${ventHoverMarkup()}
       <g class="vent-history-legend">
         <text x="${L+10}" y="22" fill="#dc2626">● Μέσα · min/max διακεκομμένες · μέση συνεχής</text>
         <text x="${L+470}" y="22" fill="#2563eb">● Έξω · min/max διακεκομμένες · μέση συνεχής</text>
       </g></svg>`;
+    bindVentHover();
     if(!h.complete){$("ventHistoryTable").innerHTML="";return;}
     const td=v=>Number.isFinite(v)?format(v):"—";
     $("ventHistoryTable").innerHTML=`<details open><summary>Πίνακας ημερήσιων τιμών (30 ημέρες)</summary>
@@ -1968,7 +2045,7 @@
     }).join("");
 
     const liveCircle = (key,color) => live && Number.isFinite(live[key])
-      ? `<circle class="vent-live-dot" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
+      ? `<circle class="vent-live-dot vent-hover-target" data-hover-name="${key==="inside"?"Μέσα · ζωντανά":"Έξω · ζωντανά"}" data-hover-color="${color}" data-hover-points="${escapeHtml(JSON.stringify([[+xFor(live.index).toFixed(2),+yFor(live[key]).toFixed(2),live[key],live.time]]))}" data-series="${key}" cx="${xFor(live.index).toFixed(2)}" cy="${yFor(live[key]).toFixed(2)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.5"><title>${live.time} · ${formatTemp(live[key])} °C (ζωντανά)</title></circle>`
       : "";
     const linePath = (key,sourceRows) => {
       let d = "", active = false;
@@ -1988,10 +2065,22 @@
       ${h.range==="compare"?
         `<path class="vent-yesterday" d="${linePath("inside",h.previousRows)}" fill="none" stroke="#dc2626" stroke-dasharray="7 5" stroke-width="2.6"/>
         <path class="vent-yesterday" d="${linePath("outside",h.previousRows)}" fill="none" stroke="#2563eb" stroke-dasharray="7 5" stroke-width="2.6"/>`:""}
+      <g class="vent-hover-tracks">
+        ${ventHoverTarget(linePath("inside"),h.rows,"inside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Μέσα · σήμερα","#dc2626")}
+        ${ventHoverTarget(linePath("outside"),h.rows,"outside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Έξω · σήμερα","#2563eb")}
+        ${h.range==="compare"?ventHoverTarget(linePath("inside",h.previousRows),h.previousRows,"inside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Μέσα · χθες","#dc2626"):""}
+        ${h.range==="compare"?ventHoverTarget(linePath("outside",h.previousRows),h.previousRows,"outside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Έξω · χθες","#2563eb"):""}
+      </g>
       ${liveCircle("inside","#dc2626")}${liveCircle("outside","#2563eb")}
+      ${ventHoverMarkup()}
       <g class="vent-history-legend"><text x="${plotLeft + 12}" y="23" fill="#dc2626">● Μέσα</text>
       <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text>
       ${h.range==="compare"?`<text x="${plotLeft+190}" y="23">— σήμερα · ┄ χθες</text>`:""}</g></svg>`;
+    bindVentHover();
     if (!h.complete) { $("ventHistoryTable").innerHTML = ""; return; }
     const td = x => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
     const compare=h.range==="compare";

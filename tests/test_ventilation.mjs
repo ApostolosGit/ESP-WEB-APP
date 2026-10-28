@@ -203,7 +203,7 @@ for(let offset=0;offset<96;offset+=8){
 b.message(vid,"vent/history","E|current");
 assert.equal(b.app.getHistory().complete,true);
 const liveSvg=b.nodes.get("ventHistoryChart").innerHTML;
-assert(liveSvg.includes('class="vent-live-dot"') || !b.app.getHistory().live,
+assert(liveSvg.includes('class="vent-live-dot vent-hover-target"') || !b.app.getHistory().live,
   "Render a live temperature dot if a valid ESP time is present");
 b.message(vid,"state",{...b.app.devices.get(vid).state,time:"10:30:15",
   temp_inside:25.25,temp_outside:16.75});
@@ -235,6 +235,9 @@ assert(plotted.includes('data-axis-min="14"') && plotted.includes('data-axis-max
   "Round actual observed extremes to exterior 0.5C axis ticks");
 assert(plotted.includes("25,5°C"),"Top Y tick follows the 0.5C axis grid");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
+assert.equal((plotted.match(/<path class="vent-hover-target"/g)||[]).length,2,
+  "24-hour lines expose two full-width hover paths for X/Y values");
+assert(plotted.includes('class="vent-hover-tooltip"'),"Coordinate label is included in SVG");
 assert.equal(b.app.requestVentHistory(vid,"previous"),true);
 assert(b.published.some(x=>x.payload==="vent_history|previous"));
 // Packets for the old day must not pollute the newly selected day.
@@ -266,6 +269,8 @@ assert.equal(b.app.getHistory().complete,true,"48-hour aggregate completed");
 assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-yesterday"/g)||[]).length,2,
   "Yesterday is a dashed red and dashed blue line in the same graph");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα χθες °C"));
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/<path class="vent-hover-target"/g)||[]).length,4,
+  "48-hour lines expose hover paths for inside/outside today and yesterday");
 // 30-day daily aggregates: 10 packets * 3 records, with no invented history.
 assert.equal(b.app.requestVentHistory(vid,"days30"),true);
 const day=(i)=>`${50500-i},14.5,23.0,${(19.2+i/10).toFixed(1)},12.0,20.0,16.1`;
@@ -277,6 +282,8 @@ assert(b.app.getHistory().complete,"30-day data complete");
 assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-daily-series"/g)||[]).length,6,
   "Six min/max/average daily lines");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα μέση °C"));
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/<path class="vent-hover-target"/g)||[]).length,6,
+  "Six daily curves provide X/Y hover targets");
 const dailySvg=b.nodes.get("ventHistoryChart").innerHTML;
 const dayLabels=[...dailySvg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\/text>/g)]
   .map(m=>m[1]);
@@ -333,6 +340,8 @@ loadVentDaily(i=>i===7?day(i):missingDay(i));
 const oneDaySvg=b.nodes.get("ventHistoryChart").innerHTML;
 assert.equal((oneDaySvg.match(/class="vent-grid-day"/g)||[]).length,1);
 assert.deepEqual(xDateLabels(oneDaySvg),["04-04"]);
+assert.equal((oneDaySvg.match(/class="vent-standalone-point"/g)||[]).length,6,
+  "Single-day curves keep visible and hoverable recorded data points");
 assert(!oneDaySvg.includes("NaN"),"Single-day X axis must avoid division by zero");
 
 // All-null daily history must keep the normal no-recordings message.
