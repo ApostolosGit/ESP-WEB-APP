@@ -294,6 +294,52 @@ assert.equal(Number(dailyPoints.at(-1)[1]),1030,"Newest Ventilation point ends o
 assert(Number(dailyPoints[0][2])<Number(dailyPoints.at(-1)[2]),
   "Older higher daily average must be graphed before the newer lower average");
 
+// Sparse 30-day history: no leading blank weeks on the Ventilation X axis.
+// The daily table still contains all 30 original MQTT slots.
+const missingDay=i=>`${50500-i},null,null,null,null,null,null`;
+const loadVentDaily=record=>{
+  assert.equal(b.app.requestVentHistory(vid,"days30"),true);
+  for(let offset=0;offset<30;offset+=3){
+    b.message(vid,"vent/history",
+      `D|${offset}|${record(offset)}|${record(offset+1)}|${record(offset+2)}`);
+  }
+  b.message(vid,"vent/history","E|days30");
+  assert.equal(b.app.getHistory().complete,true);
+};
+const xDateLabels=svg=>[...svg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\\/text>/g)]
+  .map(m=>m[1]);
+
+loadVentDaily(i=>i<6?day(i):missingDay(i));
+const sparseSvg=b.nodes.get("ventHistoryChart").innerHTML;
+assert.equal((sparseSvg.match(/class="vent-grid-day"/g)||[]).length,6,
+  "Only six recorded dates occupy the Ventilation X axis");
+assert.deepEqual(xDateLabels(sparseSvg),["04-06","04-08","04-10","04-11"],
+  "Date labels begin on the first recorded date and continue every two days");
+assert.equal((b.nodes.get("ventHistoryTable").innerHTML.match(/<tr>/g)||[]).length,31,
+  "Keep all 30 daily table rows even when chart begins at the first recording");
+
+// Missing newest day and a gap inside the recorded span: trim the edges,
+// preserve the one-day gap, and do not draw a connecting line through it.
+loadVentDaily(i=>(i===2||i===4)?day(i):missingDay(i));
+const gapSvg=b.nodes.get("ventHistoryChart").innerHTML;
+assert.equal((gapSvg.match(/class="vent-grid-day"/g)||[]).length,3);
+assert.deepEqual(xDateLabels(gapSvg),["04-07","04-09"]);
+const gapPath=gapSvg.match(/data-series="insideAvg"\\s+d="([^"]+)"/)?.[1];
+assert.equal((gapPath.match(/M/g)||[]).length,2,
+  "Keep a gap between two recorded days with an empty day between them");
+
+// Exactly one day with readings must still render without invalid coordinates.
+loadVentDaily(i=>i===7?day(i):missingDay(i));
+const oneDaySvg=b.nodes.get("ventHistoryChart").innerHTML;
+assert.equal((oneDaySvg.match(/class="vent-grid-day"/g)||[]).length,1);
+assert.deepEqual(xDateLabels(oneDaySvg),["04-04"]);
+assert(!oneDaySvg.includes("NaN"),"Single-day X axis must avoid division by zero");
+
+// All-null daily history must keep the normal no-recordings message.
+loadVentDaily(i=>missingDay(i));
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Δεν υπάρχουν ακόμη καταγραφές"));
+
+
 
 // Boiler is a SEPARATE type: only 3 DS18B20 readings, no control settings.
 const boiler = buildContext();
