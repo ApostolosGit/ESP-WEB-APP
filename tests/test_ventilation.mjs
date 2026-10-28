@@ -235,7 +235,7 @@ assert(plotted.includes('data-axis-min="14"') && plotted.includes('data-axis-max
   "Round actual observed extremes to exterior 0.5C axis ticks");
 assert(plotted.includes("25,5°C"),"Top Y tick follows the 0.5C axis grid");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Πίνακας 96"));
-assert.equal((plotted.match(/class="vent-hover-target"/g)||[]).length,2,
+assert.equal((plotted.match(/<path class="vent-hover-target"/g)||[]).length,2,
   "24-hour lines expose two full-width hover paths for X/Y values");
 assert(plotted.includes('class="vent-hover-tooltip"'),"Coordinate label is included in SVG");
 assert.equal(b.app.requestVentHistory(vid,"previous"),true);
@@ -269,7 +269,7 @@ assert.equal(b.app.getHistory().complete,true,"48-hour aggregate completed");
 assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-yesterday"/g)||[]).length,2,
   "Yesterday is a dashed red and dashed blue line in the same graph");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα χθες °C"));
-assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-hover-target"/g)||[]).length,4,
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/<path class="vent-hover-target"/g)||[]).length,4,
   "48-hour lines expose hover paths for inside/outside today and yesterday");
 // 30-day daily aggregates: 10 packets * 3 records, with no invented history.
 assert.equal(b.app.requestVentHistory(vid,"days30"),true);
@@ -282,7 +282,7 @@ assert(b.app.getHistory().complete,"30-day data complete");
 assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-daily-series"/g)||[]).length,6,
   "Six min/max/average daily lines");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Μέσα μέση °C"));
-assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/class="vent-hover-target"/g)||[]).length,6,
+assert.equal((b.nodes.get("ventHistoryChart").innerHTML.match(/<path class="vent-hover-target"/g)||[]).length,6,
   "Six daily curves provide X/Y hover targets");
 const dailySvg=b.nodes.get("ventHistoryChart").innerHTML;
 const dayLabels=[...dailySvg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\/text>/g)]
