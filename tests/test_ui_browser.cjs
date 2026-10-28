@@ -9,7 +9,7 @@ const server=http.createServer((req,res)=>{
  if(!fs.existsSync(full)){res.writeHead(404);res.end();return;}
  let content=fs.readFileSync(full);
  if(file==='index.html') content=Buffer.from(content.toString().replace(/<script[^>]+src="https:[^>]+><\/script>/g,''));
- if(file==='app.js') content=Buffer.from(content.toString().replace(/\}\)\(\);\s*$/,'window.testApp={devices,renderAll,connect,loadEnergyHistory};})();'));
+ if(file==='app.js') content=Buffer.from(content.toString().replace(/\}\)\(\);\s*$/,'window.testApp={devices,renderAll,connect,loadEnergyHistory,renderVentHistory,setVentHistory:h=>{ventHistorySession=h;}};})();'));
  res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'text/html');res.end(content);
 });
 (async()=>{
@@ -252,6 +252,59 @@ const server=http.createServer((req,res)=>{
  assert(mobileCharts.scroll<=mobileCharts.viewport,'History modal must not overflow mobile viewport');
  assert(mobileCharts.content>mobileCharts.plot,'Wide charts should scroll inside plot on mobile');
  await page.screenshot({path:path.join(artifacts,'compare-48h-mobile.png')});
+
+
+ // Hover the actual SVG curve in Chromium, not just a data point/legend.
+ await page.setViewportSize({width:1280,height:850});
+ await page.evaluate(()=>{
+  const id='vent-A1B2C3D4E5F6';
+  testApp.devices.set(id,{id,state:{meter:'VENTILATION',device_type:'VENTILATION'},online:true});
+  document.getElementById('ventHistoryDialog').showModal();
+  const dailyRows=Array.from({length:30},(_,i)=>({
+   dayKey:50500-i,insideMin:i<6?18:null,insideMax:i<6?24:null,
+   insideAvg:i<6?19+i*.2:null,outsideMin:i<6?12:null,
+   outsideMax:i<6?17:null,outsideAvg:i<6?14+i*.1:null
+  }));
+  testApp.setVentHistory({id,range:'days30',dailyRows,seen:new Set(Array.from({length:10},(_,i)=>i*3)),complete:true});
+  testApp.renderVentHistory();
+ });
+ const dailyHover=page.locator('#ventHistoryChart .vent-hover-target[data-hover-name="Μέσα · μέση"]').first();
+ assert.equal(await dailyHover.count(),1,'Real 30-day inside-average hover path exists');
+ const dailyPointer=await dailyHover.evaluate(path=>{
+  const svg=path.ownerSVGElement,points=JSON.parse(path.dataset.hoverPoints);
+  const p=svg.createSVGPoint();
+  p.x=points[0][0];p.y=points[0][1];
+  const screen=p.matrixTransform(svg.getScreenCTM());
+  return {x:screen.x,y:screen.y};
+ });
+ await page.mouse.move(dailyPointer.x,dailyPointer.y);
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-tooltip').evaluate(el=>el.style.display),'',
+  'Moving onto a line reveals the X/Y label');
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-title').textContent(),'Μέσα · μέση');
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-x').textContent(),'X: 2026-04-06');
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-y').textContent(),'Y: 20 °C');
+ await page.mouse.move(2,2);
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-tooltip').evaluate(el=>el.style.display),'none',
+  'Moving off the curve hides the coordinate label');
+ // Compare view has four hoverable curves; the bar-based history remains unchanged.
+ await page.evaluate(()=>{
+  const id='vent-A1B2C3D4E5F6';
+  const rows=Array.from({length:96},(_,i)=>i<4?{inside:21+i*.1,outside:16+i*.1}:null);
+  const previousRows=Array.from({length:96},(_,i)=>i<4?{inside:20+i*.1,outside:15+i*.1}:null);
+  testApp.setVentHistory({id,range:'compare',rows,previousRows,seen:new Set(),complete:true});
+  testApp.renderVentHistory();
+ });
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-tracks path').count(),4);
+ const hourlyPointer=await page.locator('#ventHistoryChart .vent-hover-target[data-hover-name="Μέσα · χθες"]').first().evaluate(path=>{
+  const svg=path.ownerSVGElement,p0=JSON.parse(path.dataset.hoverPoints)[0],p=svg.createSVGPoint();
+  p.x=p0[0];p.y=p0[1];
+  const q=p.matrixTransform(svg.getScreenCTM());
+  return {x:q.x,y:q.y};
+ });
+ await page.mouse.move(hourlyPointer.x,hourlyPointer.y);
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-x').textContent(),'X: 00:00');
+ assert.equal(await page.locator('#ventHistoryChart .vent-hover-y').textContent(),'Y: 20 °C');
+ await page.locator('#closeVentHistoryBtn').click();
 
  // A new tab shares device storage but has no pre-existing tab session.
  // Only explicit remember-device consent may make it connect on startup.
