@@ -1813,6 +1813,73 @@
     const d=new Date(Date.UTC(year,0,1)+day*86400000);
     return d.toISOString().slice(0,10);
   }
+
+  // The hover targets follow real line segments and snap to recorded samples.
+  function ventHoverTarget(d, rows, key, xFor, yFor, xLabel, name, color) {
+    const points=[], isolated=[];
+    rows.forEach((row,i)=>{
+      if(!Number.isFinite(row?.[key]))return;
+      const p=[+xFor(i).toFixed(2),+yFor(row[key]).toFixed(2),row[key],xLabel(i,row)];
+      points.push(p);
+      if(!Number.isFinite(rows[i-1]?.[key])&&!Number.isFinite(rows[i+1]?.[key]))isolated.push(p);
+    });
+    if(!points.length)return "";
+    const attrs='class="vent-hover-target" data-hover-name="'+escapeHtml(name)+
+      '" data-hover-color="'+color+'" data-hover-points="'+escapeHtml(JSON.stringify(points))+'"';
+    return '<path '+attrs+' d="'+d+'" fill="none" stroke="transparent" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" pointer-events="stroke"/>'
+      +isolated.map(p=>'<circle class="vent-standalone-point" cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="'+color+'" pointer-events="none"/>'+
+        '<circle '+attrs+' cx="'+p[0]+'" cy="'+p[1]+'" r="10" fill="transparent" pointer-events="all"/>').join("");
+  }
+  function ventHoverMarkup() {
+    return '<circle class="vent-hover-marker" r="5" fill="#fff" stroke="#334155" stroke-width="2.5" style="display:none" pointer-events="none"/>'+
+      '<g class="vent-hover-tooltip" style="display:none" pointer-events="none">'+
+      '<rect class="vent-hover-box" width="232" height="70" rx="8"/>'+
+      '<text class="vent-hover-title" x="11" y="19"></text>'+
+      '<text class="vent-hover-text vent-hover-x" x="11" y="39"></text>'+
+      '<text class="vent-hover-text vent-hover-y" x="11" y="58"></text></g>';
+  }
+  function bindVentHover() {
+    const svg=$("ventHistoryChart")?.querySelector?.(".vent-history-plot");
+    if(!svg)return;
+    const marker=svg.querySelector(".vent-hover-marker");
+    const tooltip=svg.querySelector(".vent-hover-tooltip");
+    if(!marker||!tooltip)return;
+    const title=tooltip.querySelector(".vent-hover-title");
+    const xText=tooltip.querySelector(".vent-hover-x");
+    const yText=tooltip.querySelector(".vent-hover-y");
+    let lastTarget=null,lastPoints=[];
+    const hide=()=>{marker.style.display="none";tooltip.style.display="none";};
+    svg.addEventListener("pointermove",event=>{
+      if(event.pointerType==="touch")return;
+      const target=event.target.closest?.(".vent-hover-target");
+      if(!target||!svg.contains(target)){hide();return;}
+      const matrix=svg.getScreenCTM();
+      if(!matrix){hide();return;}
+      if(target!==lastTarget){
+        lastTarget=target;
+        try{lastPoints=JSON.parse(target.dataset.hoverPoints||"[]");}
+        catch(_){lastPoints=[];}
+      }
+      if(!lastPoints.length){hide();return;}
+      const cursor=svg.createSVGPoint();
+      cursor.x=event.clientX;cursor.y=event.clientY;
+      const position=cursor.matrixTransform(matrix.inverse());
+      const point=lastPoints.reduce((best,p)=>Math.abs(p[0]-position.x)<Math.abs(best[0]-position.x)?p:best);
+      marker.setAttribute("cx",point[0]);marker.setAttribute("cy",point[1]);
+      marker.setAttribute("stroke",target.dataset.hoverColor||"#334155");
+      title.textContent=target.dataset.hoverName||"Θερμοκρασία";
+      xText.textContent="X: "+point[3];
+      yText.textContent="Y: "+Number(point[2].toFixed(2)).toLocaleString("el-GR",{maximumFractionDigits:2})+" °C";
+      const view=svg.viewBox.baseVal;
+      const tx=Math.min(Math.max(4,point[0]+13),view.width-236);
+      const ty=Math.max(4,Math.min(point[1]>=88?point[1]-80:point[1]+14,view.height-74));
+      tooltip.setAttribute("transform","translate("+tx+","+ty+")");
+      marker.style.display="";tooltip.style.display="";
+    });
+    svg.addEventListener("pointerleave",hide);
+    svg.addEventListener("pointercancel",hide);
+  }
+
   function renderVent30Days(h) {
     const count=h.seen.size*3;
     $("ventHistoryStatus").textContent =
