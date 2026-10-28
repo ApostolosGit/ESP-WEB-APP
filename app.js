@@ -1858,7 +1858,7 @@
         ? (i===0||(i%2===0&&!tooCloseToLast)||i===dayCount-1)
         : i%3===0;
       const dayLabel=ventDayLabel(plotRows[i]?.dayKey);
-      if(showDate&&dayLabel!=="—")
+      if(showDate&&(!ventilation30Days||dayLabel!=="—"))
         grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${dayLabel.slice(5)}</text>`);
     }
     const series=[
