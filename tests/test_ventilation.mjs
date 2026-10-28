@@ -306,7 +306,7 @@ const loadVentDaily=record=>{
   b.message(vid,"vent/history","E|days30");
   assert.equal(b.app.getHistory().complete,true);
 };
-const xDateLabels=svg=>[...svg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\\/text>/g)]
+const xDateLabels=svg=>[...svg.matchAll(/class="vent-x-label"[^>]*>([^<]*)<\/text>/g)]
   .map(m=>m[1]);
 
 loadVentDaily(i=>i<6?day(i):missingDay(i));
@@ -324,7 +324,7 @@ loadVentDaily(i=>(i===2||i===4)?day(i):missingDay(i));
 const gapSvg=b.nodes.get("ventHistoryChart").innerHTML;
 assert.equal((gapSvg.match(/class="vent-grid-day"/g)||[]).length,3);
 assert.deepEqual(xDateLabels(gapSvg),["04-07","04-09"]);
-const gapPath=gapSvg.match(/data-series="insideAvg"\\s+d="([^"]+)"/)?.[1];
+const gapPath=gapSvg.match(/data-series="insideAvg"\s+d="([^"]+)"/)?.[1];
 assert.equal((gapPath.match(/M/g)||[]).length,2,
   "Keep a gap between two recorded days with an empty day between them");
 
