@@ -2065,10 +2065,22 @@
       ${h.range==="compare"?
         `<path class="vent-yesterday" d="${linePath("inside",h.previousRows)}" fill="none" stroke="#dc2626" stroke-dasharray="7 5" stroke-width="2.6"/>
         <path class="vent-yesterday" d="${linePath("outside",h.previousRows)}" fill="none" stroke="#2563eb" stroke-dasharray="7 5" stroke-width="2.6"/>`:""}
+      <g class="vent-hover-tracks">
+        ${ventHoverTarget(linePath("inside"),h.rows,"inside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Μέσα · σήμερα","#dc2626")}
+        ${ventHoverTarget(linePath("outside"),h.rows,"outside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Έξω · σήμερα","#2563eb")}
+        ${h.range==="compare"?ventHoverTarget(linePath("inside",h.previousRows),h.previousRows,"inside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Μέσα · χθες","#dc2626"):""}
+        ${h.range==="compare"?ventHoverTarget(linePath("outside",h.previousRows),h.previousRows,"outside",xFor,yFor,
+          i=>String(Math.floor(i/4)).padStart(2,"0")+":"+String(i%4*15).padStart(2,"0"),"Έξω · χθες","#2563eb"):""}
+      </g>
       ${liveCircle("inside","#dc2626")}${liveCircle("outside","#2563eb")}
+      ${ventHoverMarkup()}
       <g class="vent-history-legend"><text x="${plotLeft + 12}" y="23" fill="#dc2626">● Μέσα</text>
       <text x="${plotLeft + 104}" y="23" fill="#2563eb">● Έξω</text>
       ${h.range==="compare"?`<text x="${plotLeft+190}" y="23">— σήμερα · ┄ χθες</text>`:""}</g></svg>`;
+    bindVentHover();
     if (!h.complete) { $("ventHistoryTable").innerHTML = ""; return; }
     const td = x => Number.isFinite(x) ? escapeHtml(formatNumber(x,1)) : "—";
     const compare=h.range==="compare";
