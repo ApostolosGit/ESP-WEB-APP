@@ -1950,10 +1950,20 @@
       ${series.map(([key,color,dash])=>`<path class="vent-daily-series" data-series="${key}"
         d="${path(key)}" fill="none" stroke="${color}" ${dash?`stroke-dasharray="${dash}"`:""}
         stroke-width="2.4"/>`).join("")}
+      <g class="vent-hover-tracks">
+        ${series.map(([key,color])=>{
+          const group=key.startsWith("inside")?"Μέσα":"Έξω";
+          const kind=key.endsWith("Min")?"ελάχιστη":key.endsWith("Max")?"μέγιστη":"μέση";
+          return ventHoverTarget(path(key),plotRows,key,x,y,
+            (_,row)=>ventDayLabel(row?.dayKey),group+" · "+kind,color);
+        }).join("")}
+      </g>
+      ${ventHoverMarkup()}
       <g class="vent-history-legend">
         <text x="${L+10}" y="22" fill="#dc2626">● Μέσα · min/max διακεκομμένες · μέση συνεχής</text>
         <text x="${L+470}" y="22" fill="#2563eb">● Έξω · min/max διακεκομμένες · μέση συνεχής</text>
       </g></svg>`;
+    bindVentHover();
     if(!h.complete){$("ventHistoryTable").innerHTML="";return;}
     const td=v=>Number.isFinite(v)?format(v):"—";
     $("ventHistoryTable").innerHTML=`<details open><summary>Πίνακας ημερήσιων τιμών (30 ημέρες)</summary>
