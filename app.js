@@ -1818,23 +1818,29 @@
     $("ventHistoryStatus").textContent =
       `${h.id} · 30 ημέρες · ${count}/30 ημερήσιες εγγραφές${h.complete?" · ολοκληρώθηκε":" · λήψη…"}`;
     const rows=h.dailyRows||[];
-    // Ventilation daily MQTT slots arrive newest first. Only its 30-day chart
-    // should run oldest -> newest; leave Boiler and the underlying table unchanged.
-    const ventilation30Days=meterType(devices.get(h.id))==="VENTILATION";
-    const plotRows=ventilation30Days?rows.slice().reverse():rows;
     const fields=["insideMin","insideMax","insideAvg","outsideMin","outsideMax","outsideAvg"];
+    const ventilation30Days=meterType(devices.get(h.id))==="VENTILATION";
+    // Ventilation MQTT daily records arrive newest first; preserve Boiler's order.
+    const chronologicalRows=ventilation30Days?rows.slice().reverse():rows;
     const numeric=rows.flatMap(r=>r?fields.map(k=>r[k]):[]).filter(Number.isFinite);
     if(!numeric.length){
       $("ventHistoryChart").innerHTML='<p class="admin-help">Δεν υπάρχουν ακόμη καταγραφές 30 ημερών. Απαιτείται firmware 1.07+ και χρόνος λειτουργίας.</p>';
       $("ventHistoryTable").innerHTML="";
       return;
     }
+    // Do not waste the X axis on days without measurements before the first
+    // (or after the last) recorded day. Keep empty days *between* readings.
+    const hasReading=row=>fields.some(key=>Number.isFinite(row?.[key]));
+    const first=ventilation30Days?chronologicalRows.findIndex(hasReading):0;
+    const last=ventilation30Days?chronologicalRows.findLastIndex(hasReading):chronologicalRows.length-1;
+    const plotRows=ventilation30Days?chronologicalRows.slice(first,last+1):chronologicalRows;
+    const dayCount=plotRows.length;
     const observedMin=Math.min(...numeric),observedMax=Math.max(...numeric);
     let axisMin=Math.floor(observedMin*2)/2,axisMax=Math.ceil(observedMax*2)/2;
     if(axisMin===axisMax){axisMin-=0.5;axisMax+=0.5;}
     const L=70,W=960,T=54,H=Math.max(245,Math.min(660,Math.ceil((axisMax-axisMin)*28)));
     const B=T+H;
-    const x=i=>L+i*W/29,y=v=>T+(axisMax-v)*H/(axisMax-axisMin);
+    const x=i=>L+i*W/Math.max(1,dayCount-1),y=v=>T+(axisMax-v)*H/(axisMax-axisMin);
     const format=v=>Number(v.toFixed(2)).toLocaleString("el-GR",{maximumFractionDigits:2});
     const grid=[];
     for(let tick=Math.round(axisMin*2);tick<=Math.round(axisMax*2);tick++){
@@ -1842,14 +1848,18 @@
       grid.push(`<line class="vent-grid-half-degree" x1="${L}" x2="${L+W}" y1="${yy.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="currentColor" stroke-opacity=".15"/>`);
       grid.push(`<text class="vent-y-label" x="${L-9}" y="${(yy+4).toFixed(2)}" text-anchor="end">${format(tick/2)}°C</text>`);
     }
-    for(let i=0;i<30;i++){
+    for(let i=0;i<dayCount;i++){
       const xx=x(i);
       grid.push(`<line class="vent-grid-day" x1="${xx.toFixed(2)}" x2="${xx.toFixed(2)}" y1="${T}" y2="${B}" stroke="currentColor" stroke-opacity=".09"/>`);
-      // Every other day for Ventilation, plus the newest day on the right.
-      // Skip the penultimate label to avoid overlapping the final date.
-      const showDate=ventilation30Days?((i%2===0&&i<=26)||i===29):i%3===0;
-      if(showDate)
-        grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${ventDayLabel(plotRows[i]?.dayKey).slice(5)}</text>`);
+      // One date every other day, including the first and the newest. Avoid
+      // crowding the last two dates when 30 days fill the full graph width.
+      const tooCloseToLast=i===dayCount-2&&W/Math.max(1,dayCount-1)<50;
+      const showDate=ventilation30Days
+        ? (i===0||(i%2===0&&!tooCloseToLast)||i===dayCount-1)
+        : i%3===0;
+      const dayLabel=ventDayLabel(plotRows[i]?.dayKey);
+      if(showDate&&(!ventilation30Days||dayLabel!=="—"))
+        grid.push(`<text class="vent-x-label" x="${xx.toFixed(2)}" y="${B+22}" text-anchor="middle">${dayLabel.slice(5)}</text>`);
     }
     const series=[
       ["insideMin","#dc2626","7 5"],["insideMax","#dc2626","7 5"],["insideAvg","#dc2626",""],
