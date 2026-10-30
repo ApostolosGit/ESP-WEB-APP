@@ -134,4 +134,42 @@ assert(!b.app.otaManifestMatchesDevice(target,b.app.devices.get(id)),
 b=boot();b.frame('health',health('4.00','SSD1309'));
 assert(b.app.otaManifestMatchesDevice(target,b.app.devices.get(id)),
   'New firmware identity is an exact SSD1309 match');
-console.log('Boiler v4 SSD1309 manifest, SH1106->SSD1309 confirmation/PIN, OTA v2 source profile, fresh target profile and no-same-version overwrite PASS');
+
+const sh1106 = manifest('4.01','SH1106');
+const sh1106ManifestUrl = base + 'manifest-boiler-sh1106.txt';
+const ssdManifestUrl = base + 'manifest-boiler.txt';
+// SH1106 1.3-inch and SSD1309 1.54-inch devices must fetch separate manifests.
+b=boot();b.frame('health',health('3.05','SH1106'));
+assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),sh1106ManifestUrl);
+assert(b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)));
+assert(!b.app.otaManifestMatchesDevice({...sh1106,profile:'esp32c3-boiler-4ds18b20-ssd1309'},b.app.devices.get(id)));
+availability(b,sh1106);
+await b.app.startRemoteOta(id);
+assert.equal(b.prompts.length,1);
+assert.match(b.prompts[0],/SH1106/);
+assert.equal(otaMessages(b).length,0,'SH1106 requires PIN before sending OTA');
+b.pin('wrong');assert.equal(otaMessages(b).length,0);
+b.pin('12134');assert.equal(otaMessages(b).length,1);
+assert.equal(otaMessages(b)[0].p,
+  `ota_https_v2|${sh1106.size}|${sh1106.md5}|${base+sh1106.file}|esp32c3-boiler-4ds18b20-sh1106`);
+b.frame('admin/response',{ok:true,cmd:'ota_https',state:'starting',from:'3.05'});
+assert(b.app.getSession());
+b.frame('status','offline');b.frame('status','online');b.advance(100);
+b.frame('health',health('4.01','SSD1309'));
+assert(b.app.getSession(),'Incorrect OLED target must not count as OTA completion');
+b.frame('health',health('4.01','SH1106'));
+assert.equal(b.app.getSession(),null,'Fresh SH1106 4.01 health confirms successful OTA');
+
+b=boot();b.frame('health',health('4.00','SSD1309'));
+assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),ssdManifestUrl);
+assert(!b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)),
+  'SSD1309 1.54-inch must never automatically receive SH1106 firmware');
+assert(b.app.otaManifestMatchesDevice(target,b.app.devices.get(id)));
+b=boot();b.frame('health',health('4.01','SH1106'));
+assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),sh1106ManifestUrl);
+assert(b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)));
+b=boot();b.frame('health',health('3.05','SH1106',{profile:'invalid'}));
+assert.throws(()=>b.app.otaManifestUrlForDevice(b.app.devices.get(id)),/ταυτότητας/);
+assert(!b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)));
+
+console.log('Boiler v4 SSD1309 and v4.01 SH1106 manifest, SH1106->SSD1309 confirmation/PIN, OTA v2 source profile, fresh target profile and no-same-version overwrite PASS');
