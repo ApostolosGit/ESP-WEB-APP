@@ -2446,7 +2446,7 @@
       if(h.seen.size===12){
         if(h.range==="compare"&&h.phase==="current"){
           h.phase="previous";h.seen.clear();renderVentHistory();
-          const sent=publish(id,"admin/request",(meterType(device)==="BOILER"?"boiler_history":"vent_history")+"|previous");
+          const sent=publish(id,"admin/request","vent_history|previous");
           if(!sent){$("ventHistoryStatus").textContent="Δεν ξεκίνησε η λήψη χθεσινής ημέρας.";return;}
           ventHistoryTimeout=setTimeout(()=>{
             if(ventHistorySession===h&&!h.complete)
