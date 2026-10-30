@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.84";
+  const APP_VERSION = "5.85";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -28,7 +28,7 @@
   const OTA_POLL_MS = 5000;
   const OTA_TOTAL_TIMEOUT_MS = 180000;
   const OTA_PIN = "12134";
-  const OTA_MANIFEST_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA/main/";
+  const OTA_MANIFEST_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA.bin/main/";
   const devices = new Map();
   const csvBuffers = new Map();
   const adminBusy = new Set();
@@ -1053,7 +1053,8 @@
       return boilerDeviceIdentity(device)===null;
     }
     if (type === "VENTILATION") {
-      const match = /^Ventilation_ESP8266_V(\d+)_(\d{2})\.bin$/.exec(manifest.file);
+      // Accept V7_0 (7.0), while retaining V2_04 (2.04) and strict version matching.
+      const match = /^Ventilation_ESP8266_V(\d+)_(\d{1,2})\.bin$/.exec(manifest.file);
       if (manifest.meter !== "VENTILATION" || !match ||
           manifest.version !== `${Number(match[1])}.${match[2]}`) return false;
       if (ventilationManifestNeedsProfile(manifest)) {
