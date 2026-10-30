@@ -1,4 +1,13 @@
-# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.86
+# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.87
+
+## 5.87 — Boiler v4.01 SH1106 1.3-inch and v4.00 SSD1309 1.54-inch OTA
+
+- Boiler devices reporting a verified **SH1106** profile check `manifest-boiler-sh1106.txt` (Boiler v4.01), while those reporting **SSD1309** still check `manifest-boiler.txt` (v4.00).
+- The new v4.01 firmware is an ESP32-C3 application-only OTA binary for **SH1106 128×64, 1.3-inch**, with `OLED_TYPE 1`, and keeps CommonPlatform v1.05 and four DS18B20 channels.
+- Existing v4.00 **SSD1309 1.54-inch** firmware, binary, and manifest remain available unchanged; no cross-display upgrade is offered automatically.
+- Display profile identity, newer-version checks, operator confirmation and PIN, MD5 and same-device fresh post-OTA health remain required. Neither release is claimed hardware-tested.
+
+
 
 ## 5.86 — Boiler v4.00 SSD1309 1.54-inch OLED OTA
 
