@@ -4250,7 +4250,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.84", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.85", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
