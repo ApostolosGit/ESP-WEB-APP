@@ -1127,6 +1127,9 @@
       if (identity?.oled === "SSD1309") {
         return BOILER_OTA_BASE_URL + "manifest-boiler.txt";
       }
+      if (identity?.oled === "CH1116") {
+        return BOILER_OTA_BASE_URL + "manifest-boiler-ch1116-test.txt";
+      }
       if (firmwareAtLeast(device.state?.firmware, 3, 0) ||
           firmwareAtLeast(device.health?.firmware, 3, 0)) {
         throw new Error("Αναμονή έγκυρης ταυτότητας οθόνης Boiler. Ζήτησε ενημέρωση από τη συσκευή.");
