@@ -172,4 +172,54 @@ b=boot();b.frame('health',health('3.05','SH1106',{profile:'invalid'}));
 assert.throws(()=>b.app.otaManifestUrlForDevice(b.app.devices.get(id)),/ταυτότητας/);
 assert(!b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)));
 
-console.log('Boiler v4 SSD1309 and v4.01 SH1106 manifest, SH1106->SSD1309 confirmation/PIN, OTA v2 source profile, fresh target profile and no-same-version overwrite PASS');
+
+// CH1116 compatibility experiment uses a separate manifest and an EXPLICIT
+// click: ordinary SH1106 updates must continue to use the stable v4.01.
+const trial = manifest('4.02', 'CH1116');
+const trialManifestUrl = base + 'manifest-boiler-ch1116-test.txt';
+b=boot();b.frame('health',health('4.01','SH1106')); b.setManifest(trial);
+assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),sh1106ManifestUrl);
+assert.equal(b.app.parseOtaManifest(manifestText(trial)).oled,'CH1116');
+assert(!b.app.otaManifestMatchesDevice(trial,b.app.devices.get(id)),
+  'A CH1116 trial must NOT match SH1106 devices without explicit operator confirmation');
+assert(!b.app.otaManifestMatchesDevice({...trial,ch1116TrialConfirmed:true,oled:'SSD1309'},b.app.devices.get(id)));
+assert(!b.app.otaManifestMatchesDevice({...trial,ch1116TrialConfirmed:true,file:'Boiler_ESP32C3_V4_03.bin'},b.app.devices.get(id)));
+await b.app.startRemoteOta(id,true);
+assert(b.fetched.some(u=>String(u).startsWith(trialManifestUrl+'?cb=')),'CH1116 test checks only its own experimental manifest');
+assert.equal(b.prompts.length,1);
+assert.match(b.prompts[0],/ΠΕΙΡΑΜΑΤΙΚΟ CH1116/);
+assert.match(b.prompts[0],/USB/);
+assert.match(b.prompts[0],/SSD1309/);
+assert.equal(otaMessages(b).length,0);
+b.pin('wrong');assert.equal(otaMessages(b).length,0,'Wrong PIN blocks CH1116 test');
+b.pin('12134');assert.equal(otaMessages(b).length,1);
+assert.equal(otaMessages(b)[0].p,
+  `ota_https_v2|${trial.size}|${trial.md5}|${base+trial.file}|esp32c3-boiler-4ds18b20-sh1106`,
+  'CH1116 migration must send the INSTALLED SH1106 profile to the device');
+b.frame('admin/response',{ok:true,cmd:'ota_https',state:'starting',from:'4.01'});
+assert(b.app.getSession(),'CH1116 OTA started');
+b.frame('status','offline');b.frame('status','online');b.advance(100);
+b.frame('health',health('4.02','SH1106'));
+assert(b.app.getSession(),'Fresh v4.02 health with old SH1106 profile must not confirm success');
+b.frame('health',health('4.02','CH1116'),true);
+assert(b.app.getSession(),'Retained CH1116 health cannot confirm success');
+b.frame('health',health('4.02','CH1116'));
+assert.equal(b.app.getSession(),null,'Fresh v4.02 + CH1116 identity confirms firmware OTA completion');
+
+b=boot();b.frame('health',health('4.01','SH1106'));b.setManifest(trial);b.setAccept(false);
+await b.app.startRemoteOta(id,true);
+assert.equal(otaMessages(b).length,0,'Cancel CH1116 trial blocks OTA');
+assert(!b.nodes.get('otaPinDialog').open);
+b=boot();b.frame('health',health('4.00','SSD1309'));b.setManifest(trial);
+await b.app.startRemoteOta(id,true);
+assert.equal(b.fetched.length,0,'SSD1309 device cannot even fetch CH1116 trial');
+assert.equal(otaMessages(b).length,0);
+b=boot();b.frame('health',health('4.02','CH1116'));b.setManifest(trial);
+assert(b.app.otaManifestMatchesDevice(trial,b.app.devices.get(id)),
+  'Installed CH1116 firmware has a distinct, valid exact profile');
+assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),trialManifestUrl);
+await b.app.startRemoteOta(id,true);
+assert.equal(b.fetched.length,0,'No CH1116 same-version trial OTA');
+assert.equal(otaMessages(b).length,0);
+
+console.log('Boiler v4 SSD1309, v4.01 SH1106 and experimental v4.02 CH1116 strict opt-in, authorization and health-profile regressions PASS');
