@@ -62,7 +62,7 @@ function boot() {
     }}
   };
   vm.createContext(ctx);
-  const bridge='globalThis.testApp={devices,connect,parseOtaManifest,boilerDeviceIdentity,otaManifestMatchesDevice,renderOtaAvailability,selectTarget:id=>adminTargetId=id,startRemoteOta,remoteOtaCommand,confirmOtaFromHealth,setSession:v=>otaSession=v,getSession:()=>otaSession};})();';
+  const bridge='globalThis.testApp={devices,connect,parseOtaManifest,boilerDeviceIdentity,otaManifestMatchesDevice,otaManifestUrlForDevice,renderOtaAvailability,selectTarget:id=>adminTargetId=id,startRemoteOta,remoteOtaCommand,confirmOtaFromHealth,setSession:v=>otaSession=v,getSession:()=>otaSession};})();';
   vm.runInContext(source.replace(/\}\)\(\);\s*$/,bridge),ctx);
   const app=ctx.testApp;
   app.connect({host:'mqtt.example',port:'8884',path:'/mqtt',username:'tester',password:'not-real'});
