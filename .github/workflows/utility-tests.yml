@@ -34,6 +34,7 @@ jobs:
           node-version: "22"
       - run: node tests/test_discovery_health.mjs
       - run: node tests/test_energy_ota.mjs
+      - run: node tests/test_boiler_ota.mjs
       - run: node tests/test_ventilation_ota.mjs
       - run: node tests/test_ventilation.mjs
       - run: node tests/test_energy_history.mjs
