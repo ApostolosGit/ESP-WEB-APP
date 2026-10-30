@@ -1,4 +1,13 @@
-# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.88
+# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.89
+
+## 5.89 — Correct OLED size-to-controller labels for these installations
+
+- Confirmed hardware map: **1.54-inch CH1116** uses the U8g2 **SSD1309 initializer** and a distinct `-ch1116` OTA profile; **1.3-inch SSD1309** uses its native U8g2 SSD1309 initializer and `-ssd1309` profile.
+- This is the verified configuration of the user's panels, not a universal claim that OLED diagonal size uniquely determines controller.
+- The v4.02 CH1116 test and legacy SSD1309-migration confirmations now show the corrected panel sizes. Existing firmware version identifiers, released BIN images and OTA manifests have **not** been replaced.
+- CH1116 display function was user-confirmed. Full firmware and OTA hardware validation on other ESP32/ESP8266 installations is not claimed.
+
+
 
 ## 5.88 — Boiler experimental CH1116 1.3-inch OLED trial
 
