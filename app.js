@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.86";
+  const APP_VERSION = "5.87";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1098,7 +1098,24 @@
 
   function otaManifestUrlForDevice(device) {
     const type = meterType(device);
-    if(type==="BOILER")return BOILER_OTA_BASE_URL+"manifest-boiler.txt";
+    if (type === "BOILER") {
+      const identity = boilerDeviceIdentity(device);
+      // Independent releases for the physical SH1106 1.3-inch and SSD1309
+      // 1.54-inch displays. Never offer the other display's OTA automatically.
+      if (identity?.oled === "SH1106") {
+        return BOILER_OTA_BASE_URL + "manifest-boiler-sh1106.txt";
+      }
+      if (identity?.oled === "SSD1309") {
+        return BOILER_OTA_BASE_URL + "manifest-boiler.txt";
+      }
+      if (firmwareAtLeast(device.state?.firmware, 3, 0) ||
+          firmwareAtLeast(device.health?.firmware, 3, 0)) {
+        throw new Error("Αναμονή έγκυρης ταυτότητας οθόνης Boiler. Ζήτησε ενημέρωση από τη συσκευή.");
+      }
+      // Older Boiler firmware cannot guarantee the display profile and is
+      // still rejected by profile-aware v4 manifests until identified.
+      return BOILER_OTA_BASE_URL + "manifest-boiler.txt";
+    }
     if (ventilationDeviceNeedsProfile(device) && !ventilationDeviceIdentity(device))
       throw new Error("Αναμονή πλήρους ταυτότητας Ventilation. Ζήτησε ενημέρωση της συσκευής.");
     if (!isTemperatureDevice(device) && energyDeviceNeedsProfile(device)) {
