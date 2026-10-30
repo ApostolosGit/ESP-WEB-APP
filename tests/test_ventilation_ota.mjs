@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const base = 'https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA/main/';
+const base = 'https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA.bin/main/';
 const settings = {host:'mqtt.example',port:'8884',path:'/mqtt',username:'tester',password:'not-real'};
 const vent = 'vent-18FE34000001', otherVent = 'vent-18FE34000002';
 
@@ -90,6 +90,20 @@ b.frame(vent,'health',health('1.08'));
 assert(!b.app.otaManifestMatchesDevice({...first,file:'Ventilation_ESP8266_V2_01.bin'},b.app.devices.get(vent)));
 assert(!b.app.otaManifestMatchesDevice({...first,meter:'DDS238'},b.app.devices.get(vent)));
 
+// Regression: published CommonPlatform 1.05 Ventilation V7_0.bin with version=7.0
+// must be accepted as newer by 2.04 and remain strictly profile-matched.
+b=boot();b.frame(vent,'health',health('2.04'));
+const productionV7=manifest('7.0');
+assert.equal(productionV7.file,'Ventilation_ESP8266_V7_0.bin');
+assert(b.app.otaManifestMatchesDevice(productionV7,b.app.devices.get(vent)));
+availability(b,productionV7);
+assert.match(b.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW/);
+assert(!b.app.otaManifestMatchesDevice({...productionV7,file:'Ventilation_ESP8266_V7_1.bin'},b.app.devices.get(vent)));
+assert(!b.app.otaManifestMatchesDevice({...productionV7,profile:'energymeter-jsy-mk333-ssd1309'},b.app.devices.get(vent)));
+await b.app.startRemoteOta(vent);
+assert.equal(b.prompts.length,1);
+b.pin('12134');
+assert.equal(otaMessages(b)[0].p,`ota_https_v2|${productionV7.size}|${productionV7.md5}|${base+productionV7.file}|${profile.profile}`);
 // First migration uses the original request including PIN, never the v2 command.
 // Explicit confirmation explains the new local .81 address and no OLED.
 for(const version of ['1.04','1.07','1.08']) {
