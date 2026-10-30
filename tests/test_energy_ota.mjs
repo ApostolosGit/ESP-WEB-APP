@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const base = 'https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA/main/';
+const base = 'https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA.bin/main/';
 const settings = {host:'mqtt.example',port:'8884',path:'/mqtt',username:'tester',password:'not-real'};
 const dds = 'DDS-18FE34000001', jsy = 'jsy_house-18FE34000002';
 
