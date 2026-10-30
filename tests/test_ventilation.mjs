@@ -65,7 +65,8 @@ assert(appSource.includes("low_heap_preflight"),
   "Firmware TLS heap failure must have a user-facing message");
 
 assert(appSource.includes('meterType(device) === "VENTILATION"'));
-assert(appSource.includes('startRemoteOta(id)'));
+assert(/async function startRemoteOta\(id(?:,\s*ch1116Trial\s*=\s*false)?\)/.test(appSource),
+  'OTA function remains available; optional CH1116 trial must not change normal Ventilation OTA');
 assert(html.includes('id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button" disabled'),
   "OTA button must start disabled");
 assert(appSource.includes('ventilationOtaAvailable.get(device.id)'),
