@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.87";
+  const APP_VERSION = "5.88";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -132,6 +132,7 @@
     adminStatus: $("adminStatus"),
     otaTargetInfo: $("otaTargetInfo"),
     otaUpdateBtn: $("otaUpdateBtn"),
+    otaCh1116TestBtn: $("otaCh1116TestBtn"),
     restartEspBtn: $("restartEspBtn"),
     otaPinDialog: $("otaPinDialog"),
     otaPinForm: $("otaPinForm"),
@@ -1001,10 +1002,26 @@
 
   function validBoilerProfile(identity) {
     const display = identity.oled === "SH1106" ? "sh1106" :
-      (identity.oled === "SSD1309" ? "ssd1309" : "");
+      (identity.oled === "SSD1309" ? "ssd1309" :
+       identity.oled === "CH1116" ? "ch1116" : "");
     return identity.application === "boiler" && identity.driver === "4XDS18B20" &&
       display !== "" && identity.ota_protocol === 2 &&
       identity.profile === `esp32c3-boiler-4ds18b20-${display}`;
+  }
+
+  // Dedicated opt-in test: source firmware reports SH1106, but the real panel
+  // may be CH1116. A manifest alone never authorizes this cross-profile OTA.
+  function boilerCh1116TrialCandidate(manifest, device) {
+    const identity = boilerDeviceIdentity(device);
+    const current = String(device.state?.firmware || device.health?.firmware || "");
+    return identity?.oled === "SH1106" &&
+      firmwareAtLeast(current, 3, 0) &&
+      compareFirmwareVersions(current, "4.02") < 0 &&
+      manifest.meter === "BOILER" && manifest.version === "4.02" &&
+      manifest.file === "Boiler_ESP32C3_V4_02.bin" &&
+      manifest.oled === "CH1116" &&
+      validBoilerProfile(manifest) &&
+      manifest.profile === "esp32c3-boiler-4ds18b20-ch1116";
   }
 
   function boilerDeviceIdentity(device) {
@@ -1058,6 +1075,8 @@
         const identity = boilerDeviceIdentity(device);
         if (!identity || !validBoilerProfile(manifest)) return false;
         if (manifest.profile === identity.profile) return true;
+        if (manifest.ch1116TrialConfirmed === true &&
+            boilerCh1116TrialCandidate(manifest, device)) return true;
         // One-time, explicit SH1106-profile -> physical SSD1309 1.54-inch
         // migration for pre-4.00 Boiler. The current firmware must receive
         // its OWN profile in ota_https_v2; the new firmware reports SSD1309.
@@ -1130,8 +1149,11 @@
     return OTA_MANIFEST_BASE_URL + file;
   }
 
-  async function loadOtaManifest(device) {
-    const manifestUrl = `${otaManifestUrlForDevice(device)}?cb=${Date.now()}`;
+  async function loadOtaManifest(device, ch1116Trial = false) {
+    const sourceUrl = ch1116Trial
+      ? BOILER_OTA_BASE_URL + "manifest-boiler-ch1116-test.txt"
+      : otaManifestUrlForDevice(device);
+    const manifestUrl = `${sourceUrl}?cb=${Date.now()}`;
     const response = await fetch(manifestUrl, {
       cache: "no-store"
     });
@@ -1547,16 +1569,26 @@
     return `ota_https|${manifest.size}|${manifest.md5}|${firmwareUrl}`;
   }
 
-  async function startRemoteOta(id) {
+  async function startRemoteOta(id, ch1116Trial = false) {
     const device = devices.get(id);
+    const trialEligible = Boolean(device && meterType(device) === "BOILER" &&
+      boilerDeviceIdentity(device)?.oled === "SH1106" &&
+      firmwareAtLeast(device.state?.firmware, 3, 0) &&
+      compareFirmwareVersions(device.state?.firmware, "4.02") < 0);
+    if (ch1116Trial && !trialEligible) {
+      setAdminStatus("Η δοκιμή CH1116 επιτρέπεται μόνο σε Boiler με προφίλ SH1106 v3.xx–4.01.", "error");
+      return;
+    }
     if(device && meterType(device)==="BOILER"){
       if(!firmwareAtLeast(device.state?.firmware,1,1)){
         setAdminStatus("Το Boiler απαιτεί πρώτα την εγκατάσταση 1.01 μέσω USB.","error");return;
       }
-      const available=boilerOtaAvailable.get(id);
-      if(!available || available.currentFirmware!==String(device.state?.firmware||"") ||
-        compareFirmwareVersions(available.version,device.state?.firmware||"")<=0){
-        setAdminStatus("Δεν υπάρχει επιβεβαιωμένο νεότερο Boiler OTA.","error");return;
+      if (!ch1116Trial) {
+        const available=boilerOtaAvailable.get(id);
+        if(!available || available.currentFirmware!==String(device.state?.firmware||"") ||
+          compareFirmwareVersions(available.version,device.state?.firmware||"")<=0){
+          setAdminStatus("Δεν υπάρχει επιβεβαιωμένο νεότερο Boiler OTA.","error");return;
+        }
       }
     }
     if (device && meterType(device) === "VENTILATION") {
@@ -1593,9 +1625,10 @@
     setAdminStatus("Έλεγχος διαθέσιμου OTA firmware…");
 
     try {
-      const manifest = await loadOtaManifest(device);
+      const manifest = await loadOtaManifest(device, ch1116Trial);
 
-      if (!otaManifestMatchesDevice(manifest, device)) {
+      if (ch1116Trial ? !boilerCh1116TrialCandidate(manifest, device) :
+          !otaManifestMatchesDevice(manifest, device)) {
         throw new Error(`Το διαθέσιμο firmware ${manifest.meter || "?"} δεν αντιστοιχεί στη συσκευή.`);
       }
 
@@ -1619,7 +1652,7 @@
       }
       const newBadge = isNewer ? " · NEW!" : "";
 
-      renderOtaAvailability(device, manifest, false);
+      if (!ch1116Trial) renderOtaAvailability(device, manifest, false);
 
       const legacySsdTransition = energyManifestNeedsProfile(manifest) && !energyDeviceNeedsProfile(device);
       const legacyDisplayNotice = legacySsdTransition
@@ -1633,12 +1666,15 @@
       const boilerDisplayNotice = boilerDisplayMigration
         ? "ΠΡΟΣΟΧΗ: Το εγκατεστημένο firmware δηλώνει SH1106. Η νέα v4.00 είναι μόνο για OLED 1,54″ SSD1309 (128×64). Επιβεβαίωσε ότι η ΦΥΣΙΚΗ οθόνη σου είναι SSD1309. Αν είναι SH1106, ακύρωσε το OTA.\n\n"
         : "";
+      const ch1116Warning = ch1116Trial
+        ? "ΠΕΙΡΑΜΑΤΙΚΟ CH1116 1,3″ (v4.02): χρησιμοποιεί SSD1309 initialization επειδή η U8g2 δεν έχει native CH1116 driver. ΔΕΝ έχει δοκιμαστεί σε hardware. Συνέχισε ΜΟΝΟ αν η πραγματική οθόνη είναι CH1116, έχεις πρόσβαση USB για ανάκτηση και αποδέχεσαι πιθανή μαύρη οθόνη. Αν είναι SH1106, ακύρωσε.\n\n"
+        : "";
 
       const confirmed = window.confirm(
         `OTA αναβάθμιση ${id}\n\n` +
         `Τρέχουσα έκδοση συσκευής: ${currentFw}\n` +
         `Available OTA: ${manifest.version}${oledText}${newBadge}\n\n` +
-        legacyDisplayNotice + ventilationMigrationNotice + boilerDisplayNotice +
+        legacyDisplayNotice + ventilationMigrationNotice + boilerDisplayNotice + ch1116Warning +
         "Ο ESP θα αποσυνδεθεί προσωρινά από MQTT και θα επανεκκινήσει. Συνέχεια;"
       );
 
@@ -1650,7 +1686,8 @@
       // v1.11: πρώτα εμφανίζονται current/available version και NEW!,
       // μετά η τελική επιβεβαίωση και τελευταίο βήμα το PIN.
       // Καμία MQTT OTA εντολή δεν αποστέλλεται πριν επαληθευτεί το PIN.
-      openOtaPinDialog(id, {...manifest, legacySsdConfirmed: legacySsdTransition});
+      openOtaPinDialog(id, {...manifest, legacySsdConfirmed: legacySsdTransition,
+        ch1116TrialConfirmed: ch1116Trial});
       setAdminStatus(
         `Firmware ${currentFw} → OTA ${manifest.version}${newBadge} · αναμονή PIN.`
       );
@@ -2745,6 +2782,15 @@
       ui.otaUpdateBtn.title = isBoiler && !canBoilerOta ? "Δεν έχει δημοσιευθεί επιβεβαιωμένο νεότερο Boiler OTA." : isVentilation && !canVentilationOta
         ? "Δεν υπάρχει επιβεβαιωμένο νεότερο OTA firmware Ventilation."
         : "Έλεγχος και επιβεβαίωση OTA αναβάθμισης.";
+    }
+    if (ui.otaCh1116TestBtn) {
+      const canTryCh1116 = Boolean(device && meterType(device) === "BOILER" &&
+        boilerDeviceIdentity(device)?.oled === "SH1106" &&
+        firmwareAtLeast(state.firmware, 3, 0) &&
+        compareFirmwareVersions(state.firmware, "4.02") < 0);
+      ui.otaCh1116TestBtn.classList.toggle("hidden", !canTryCh1116);
+      ui.otaCh1116TestBtn.disabled = !canTryCh1116 || busy || !connected || otaManifestLoading ||
+        Boolean(otaSession || otaAwaitingStart);
     }
     if (ui.restartEspBtn) {
       ui.restartEspBtn.disabled =
@@ -4042,6 +4088,9 @@
   ui.otaUpdateBtn.addEventListener("click", () => {
     if (adminTargetId) startRemoteOta(adminTargetId);
   });
+  ui.otaCh1116TestBtn.addEventListener("click", () => {
+    if (adminTargetId) startRemoteOta(adminTargetId, true);
+  });
 
   ui.restartEspBtn.addEventListener("click", () => {
     if (!adminTargetId) return;
@@ -4288,7 +4337,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.87", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.88", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
