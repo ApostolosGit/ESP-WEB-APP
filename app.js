@@ -2238,7 +2238,7 @@
   function renderVentHistory() {
     const h = ventHistorySession;
     if (!h) return;
-    if(meterType(devices.get(h.id))==="BOILER")return renderBoilerHistory(h);
+    if(meterType(devices.get(h.id))==="BOILER" && firmwareAtLeast(devices.get(h.id)?.state?.firmware,3,5))return renderBoilerHistory(h);
     const status = $("ventHistoryStatus");
     if(h.range==="days30")return renderVent30Days(h);
     const rangeTitle=h.range==="current"?"24 ώρες":h.range==="compare"?"48 ώρες · σύγκριση":"Χθες";
@@ -2363,7 +2363,7 @@
       return false;
     }
     ventHistoryClearTimeout();
-    const live=["current","compare"].includes(range)?(meterType(device)==="BOILER"?boilerLivePoint(device.state):ventLivePoint(device.state)):null;
+    const live=["current","compare"].includes(range)?(meterType(device)==="BOILER" && firmwareAtLeast(device.state?.firmware,3,5)?boilerLivePoint(device.state):ventLivePoint(device.state)):null;
     ventHistorySession = {id,range,rows:Array(96).fill(null),
       previousRows:range==="compare"?Array(96).fill(null):null,
       dailyRows:range==="days30"?Array(30).fill(null):null,
@@ -2402,7 +2402,7 @@
     startVentLiveRefresh();
   }
   function handleVentHistory(id,text) {
-    if(meterType(devices.get(id))==="BOILER")return handleBoilerHistory(id,text);
+    if(meterType(devices.get(id))==="BOILER" && firmwareAtLeast(devices.get(id)?.state?.firmware,3,5))return handleBoilerHistory(id,text);
     const h=ventHistorySession;
     if(!h || h.id!==id || h.complete || !$("ventHistoryDialog").open) return;
     const p=String(text).split("|");
@@ -2446,7 +2446,7 @@
       if(h.seen.size===12){
         if(h.range==="compare"&&h.phase==="current"){
           h.phase="previous";h.seen.clear();renderVentHistory();
-          const sent=publish(id,"admin/request","vent_history|previous");
+          const sent=publish(id,"admin/request",(meterType(devices.get(id))==="BOILER"?"boiler_history":"vent_history")+"|previous");
           if(!sent){$("ventHistoryStatus").textContent="Δεν ξεκίνησε η λήψη χθεσινής ημέρας.";return;}
           ventHistoryTimeout=setTimeout(()=>{
             if(ventHistorySession===h&&!h.complete)
@@ -3602,7 +3602,7 @@
       const h=ventHistorySession;
       if(h && h.id===device.id && ["current","compare"].includes(h.range) &&
          $("ventHistoryDialog").open && isTemperatureDevice(device)){
-        const live=meterType(device)==="BOILER"?boilerLivePoint(state):ventLivePoint(state);
+        const live=meterType(device)==="BOILER" && firmwareAtLeast(state.firmware,3,5)?boilerLivePoint(state):ventLivePoint(state);
         if(live){
           h.live=live;
           const quarter=Math.floor(live.index);
