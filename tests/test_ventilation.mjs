@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.83'));
-assert(appSource.includes('const APP_VERSION = "5.83"'));
+assert(html.includes('v=5.84'));
+assert(appSource.includes('const APP_VERSION = "5.84"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
@@ -148,6 +148,40 @@ b.app.renderOtaAvailability(b.app.devices.get(vid),null,false,true);
 assert(b.nodes.get("otaUpdateBtn").disabled,
   "Manifest becoming unavailable must lock OTA again");
 b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.03"});
+
+// Boiler four-series history uses a separate MQTT topic and wire protocol.
+const boiler="boiler-AABBCCDDEEFF";
+b.message(boiler,"status","online");
+b.message(boiler,"health",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
+  application:"boiler",platform_version:"1.05",profile:"esp32c3-boiler-4ds18b20-sh1106",
+  driver:"4xDS18B20",oled:"SH1106",ota_protocol:2,meter_ok:true});
+b.message(boiler,"state",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
+  temp_1:15.1,temp_2:17.2,temp_3:22.3,temp_4:23.4,time:"11:30:00",sensors_ok:true});
+const boilerCard=b.nodes.get("devicesGrid").innerHTML;
+assert(boilerCard.includes("Θ1")&&boilerCard.includes("Θ2")&&
+  boilerCard.includes("Θ3")&&boilerCard.includes("Θ4"));
+b.app.openVentHistory(boiler);
+assert(b.published.some(p=>p.payload==="boiler_history|current"),
+  "Boiler must request four-sensor history, not two-sensor Ventilation history");
+for(let offset=0;offset<=88;offset+=8){
+ const points=Array(8).fill("15.1,17.2,22.3,23.4").join("|");
+ b.message(boiler,"boiler/history","R|current|"+offset+"|"+points);
+}
+b.message(boiler,"boiler/history","E|current");
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Boiler Θ1 Θ2 Θ3 Θ4"));
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Θ4"),
+  "Boiler graph must include TH4 and its own color");
+b.app.requestVentHistory(boiler,"days30");
+for(let offset=0;offset<=27;offset+=3){
+ const d=Array(3).fill("50400,15.1,15.9,15.5,16.1,16.9,16.5,17.1,17.9,17.5,18.1,18.9,18.5").join("|");
+ b.message(boiler,"boiler/history","D|"+offset+"|"+d);
+}
+b.message(boiler,"boiler/history","E|days30");
+assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Θ4"),
+  "30d graph must include four independent daily series");
+assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Θ4 μέση"),
+  "Daily min/max/mean table must show all four sensors");
+b.nodes.get("ventHistoryDialog").close();
 
 const card=b.nodes.get("devicesGrid").innerHTML;
 assert(card.includes("21,3") && card.includes("Διακόπτης RF") && card.includes("Ώρα ESP") && card.includes("Παύση λειτουργίας"));

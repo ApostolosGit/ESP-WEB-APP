@@ -9,7 +9,8 @@
     `${BASE}/+/admin/response`,
     `${BASE}/+/admin/csv`,
     `${BASE}/+/admin/history`,
-    `${BASE}/+/vent/history`
+    `${BASE}/+/vent/history`,
+    `${BASE}/+/boiler/history`
   ];
 
   const DEFAULTS = {
@@ -18,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.83";
+  const APP_VERSION = "5.84";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -2026,9 +2027,218 @@
       </table></div></details>`;
   }
 
+
+  // Boiler uses the same 96-slot/30-day recording model as Ventilation
+  // but a distinct wire format with ALL four physical DS18B20 thermometers.
+  const BOILER_FIELDS=[
+    ["th1","Θ1","#dc2626"],["th2","Θ2","#2563eb"],
+    ["th3","Θ3","#16a34a"],["th4","Θ4","#a855f7"]
+  ];
+  function boilerLivePoint(state){
+    const m=/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/.exec(String(state?.time||""));
+    if(!m)return null;
+    const live={index:(+m[1]*3600+ +m[2]*60+ +m[3])/900,time:m[0]};
+    let has=false;
+    BOILER_FIELDS.forEach(([k])=>{
+      const v=state?.["temp_"+k.slice(-1)];
+      const n=v==null?NaN:Number(v);
+      live[k]=Number.isFinite(n)&&n>-55&&n<125?n:null;
+      if(Number.isFinite(live[k]))has=true;
+    });
+    return has?live:null;
+  }
+  function renderBoilerHistory(h){
+    const days=h.range==="days30";
+    const prior=h.range==="compare"?h.previousRows:null;
+    const rows=days?(h.dailyRows||[]).slice().reverse():h.rows;
+    const live=!days? h.live:null;
+    const vals=days?rows.flatMap(r=>r?BOILER_FIELDS.flatMap(([k])=>
+      [r[k+"Min"],r[k+"Max"],r[k+"Avg"]]):[]):
+      [...rows,...(prior||[])].flatMap(r=>r?BOILER_FIELDS.map(([k])=>r[k]):[]);
+    if(live)vals.push(...BOILER_FIELDS.map(([k])=>live[k]));
+    const numeric=vals.filter(Number.isFinite);
+    const status=$("ventHistoryStatus");
+    status.textContent=h.id+" · "+(days?"30 ημέρες":h.range==="compare"?"48 ώρες · σήμερα/χθες":"24 ώρες")+
+      (h.complete?" · ολοκληρώθηκε":" · λήψη…");
+    if(!numeric.length){
+      $("ventHistoryChart").innerHTML='<p class="admin-help">Αναμονή καταγραφών Θ1–Θ4.</p>';
+      $("ventHistoryTable").innerHTML="";return;
+    }
+    const obsMin=Math.min(...numeric),obsMax=Math.max(...numeric);
+    let lo=Math.floor(obsMin*2)/2,hi=Math.ceil(obsMax*2)/2;
+    if(lo===hi){lo-=.5;hi+=.5;}
+    const L=70,W=960,T=58,H=Math.max(240,Math.min(650,Math.ceil((hi-lo)*28))),B=T+H;
+    const x=n=>L+W*n/(days?Math.max(1,rows.length-1):96);
+    const y=v=>T+H*(hi-v)/(hi-lo);
+    const fmt=n=>Number(n).toLocaleString("el-GR",{maximumFractionDigits:1});
+    const clock=n=>String(Math.floor(n/4)).padStart(2,"0")+":"+
+      String((n%4)*15).padStart(2,"0");
+    const line=(k,source)=>{
+      let result="",continuous=false;
+      (source||rows).forEach((r,i)=>{
+        if(!Number.isFinite(r?.[k])){continuous=false;return;}
+        result+=(continuous?"L":"M")+x(i).toFixed(2)+","+y(r[k]).toFixed(2)+" ";
+        continuous=true;
+      });
+      return result.trim();
+    };
+    const grid=[],paths=[],targets=[],legends=[];
+    for(let t=Math.round(lo*2);t<=Math.round(hi*2);t++){
+      const yy=y(t/2);
+      grid.push('<line x1="'+L+'" x2="'+(L+W)+'" y1="'+yy+'" y2="'+yy+
+        '" stroke="currentColor" stroke-opacity=".15"/>');
+      grid.push('<text class="vent-y-label" x="'+(L-10)+'" y="'+(yy+4)+
+        '" text-anchor="end">'+fmt(t/2)+'°C</text>');
+    }
+    if(days){
+      rows.forEach((r,i)=>{
+        if(i%2===0||i===rows.length-1)grid.push(
+          '<text class="vent-x-label" x="'+x(i)+'" y="'+(B+22)+
+          '" text-anchor="middle">'+ventDayLabel(r?.dayKey).slice(5)+'</text>');
+      });
+    }else{
+      for(let i=0;i<=24;i++){
+        grid.push('<line x1="'+x(i*4)+'" x2="'+x(i*4)+'" y1="'+T+
+          '" y2="'+B+'" stroke="currentColor" stroke-opacity=".12"/>');
+        if(i<24)grid.push('<text class="vent-x-label" x="'+x(i*4)+
+          '" y="'+(B+20)+'" text-anchor="middle">'+String(i).padStart(2,"0")+'</text>');
+      }
+    }
+    BOILER_FIELDS.forEach(([k,name,color],j)=>{
+      (days?["Avg","Min","Max"]:[""]).forEach(kind=>{
+        const field=k+kind,d=line(field),dash=kind==="Min"||kind==="Max";
+        paths.push('<path d="'+d+'" fill="none" stroke="'+color+
+          '" stroke-width="'+(dash?1.5:2.6)+'"'+
+          (dash?' stroke-dasharray="6 4"':'')+'/>');
+        targets.push(ventHoverTarget(d,rows,field,x,y,
+          (i,r)=>days?ventDayLabel(r?.dayKey):clock(i),
+          name+(days?" · "+(kind==="Avg"?"μέση":kind==="Min"?"ελάχιστη":"μέγιστη"):" · σήμερα"),color));
+      });
+      if(prior){
+        const d=line(k,prior);
+        paths.push('<path d="'+d+'" fill="none" stroke="'+color+
+          '" stroke-width="2" stroke-dasharray="7 5"/>');
+        targets.push(ventHoverTarget(d,prior,k,x,y,i=>clock(i),name+" · χθες",color));
+      }
+      if(live&&Number.isFinite(live[k])){
+        const px=+x(live.index).toFixed(2),py=+y(live[k]).toFixed(2);
+        targets.push('<circle class="vent-hover-target vent-live-dot" cx="'+px+
+          '" cy="'+py+'" r="5" fill="'+color+'" stroke="white" stroke-width="1.5"'+
+          ' data-hover-name="'+name+' · ζωντανά" data-hover-color="'+color+
+          '" data-hover-points="'+escapeHtml(JSON.stringify([[px,py,live[k],live.time]]))+'"/>');
+      }
+      legends.push('<text x="'+(L+10+(j%2)*440)+'" y="'+(20+Math.floor(j/2)*20)+
+        '" fill="'+color+'">● '+name+(days?" · μέση (min/max διακεκ.)":"")+'</text>');
+    });
+    $("ventHistoryChart").innerHTML='<svg class="vent-history-plot" viewBox="0 0 1110 '+
+      (B+60)+'" width="1110" height="'+(B+60)+
+      '" data-min-temp="'+obsMin+'" data-max-temp="'+obsMax+
+      '" data-axis-min="'+lo+'" data-axis-max="'+hi+
+      '" role="img" aria-label="Boiler Θ1 Θ2 Θ3 Θ4">'+
+      '<g>'+grid.join("")+'</g><g>'+paths.join("")+'</g>'+
+      '<g class="vent-hover-tracks">'+targets.join("")+'</g>'+
+      ventHoverMarkup()+'<g>'+legends.join("")+
+      (prior?'<text x="80" y="54">Συνεχής: σήμερα · Διακεκομμένη: χθες</text>':'')+
+      '</g></svg>';
+    bindVentHover();
+    if(!h.complete){$("ventHistoryTable").innerHTML="";return;}
+    const td=v=>Number.isFinite(v)?fmt(v):"—";
+    if(days){
+      const heads=BOILER_FIELDS.flatMap(([,name])=>[name+" min",name+" max",name+" μέση"]);
+      $("ventHistoryTable").innerHTML='<details open><summary>30 ημερήσιες καταγραφές</summary>'+
+        '<div class="vent-history-table-scroll"><table><thead><tr><th>Ημέρα</th>'+
+        heads.map(title=>'<th>'+title+'</th>').join("")+'</tr></thead><tbody>'+
+        (h.dailyRows||[]).map(row=>'<tr><td>'+ventDayLabel(row?.dayKey)+'</td>'+
+          BOILER_FIELDS.flatMap(([k])=>[row?.[k+"Min"],row?.[k+"Max"],row?.[k+"Avg"]])
+            .map(v=>'<td>'+td(v)+'</td>').join("")+'</tr>').join("")+
+        '</tbody></table></div></details>';
+    }else{
+      const th=BOILER_FIELDS.map(([,name])=>'<th>'+name+' °C</th>').join("");
+      $("ventHistoryTable").innerHTML='<details><summary>96 δεκαπεντάλεπτα</summary>'+
+        '<div class="vent-history-table-scroll"><table><thead><tr><th>Ώρα</th>'+th+
+        (prior?th:"")+'</tr></thead><tbody>'+
+        h.rows.map((row,i)=>'<tr><td>'+clock(i)+'</td>'+
+          BOILER_FIELDS.map(([k])=>'<td>'+td(row?.[k])+'</td>').join("")+
+          (prior?BOILER_FIELDS.map(([k])=>'<td>'+td(prior[i]?.[k])+'</td>').join(""):"")+
+          '</tr>').join("")+'</tbody></table></div></details>';
+    }
+  }
+  function handleBoilerHistory(id,text){
+    const h=ventHistorySession;
+    if(!h||h.id!==id||h.complete||!$("ventHistoryDialog").open)return;
+    const p=String(text).split("|");
+    if(h.range==="days30"){
+      if(p[0]==="E"&&p[1]==="days30"&&p.length===2){
+        ventHistoryClearTimeout();
+        if(h.seen.size===10){h.complete=true;renderVentHistory();}
+        else $("ventHistoryStatus").textContent="Ελλιπείς καταγραφές 30 ημερών.";
+        return;
+      }
+      if(p[0]!=="D"||p.length!==5)return;
+      const index=Number(p[1]);
+      if(!Number.isInteger(index)||index<0||index>27||index%3||h.seen.has(index))return;
+      const got=[];
+      for(const encoded of p.slice(2)){
+        const chunks=encoded.split(",");
+        if(chunks.length!==13||!/^\d+$/.test(chunks[0]))return;
+        const key=Number(chunks[0]);
+        if(key<0||key>80000)return;
+        const vals=chunks.slice(1).map(v=>{
+          if(v==="null")return null;
+          if(!/^-?\d+(?:\.\d+)?$/.test(v))return NaN;
+          const n=Number(v);return Number.isFinite(n)&&n>-55&&n<125?n:NaN;
+        });
+        if(vals.some(Number.isNaN))return;
+        const row={dayKey:key};
+        BOILER_FIELDS.forEach(([k],i)=>{
+          row[k+"Min"]=vals[i*3];row[k+"Max"]=vals[i*3+1];row[k+"Avg"]=vals[i*3+2];
+        });
+        got.push(row);
+      }
+      got.forEach((row,i)=>h.dailyRows[index+i]=row);
+      h.seen.add(index);renderVentHistory();return;
+    }
+    const range=h.range==="compare"?h.phase:h.range;
+    if(p[1]!==range)return;
+    if(p[0]==="E"&&p.length===2){
+      ventHistoryClearTimeout();
+      if(h.seen.size!==12){$("ventHistoryStatus").textContent="Ελλιπής λήψη Boiler.";return;}
+      if(h.range==="compare"&&h.phase==="current"){
+        h.phase="previous";h.seen.clear();renderVentHistory();
+        if(!publish(id,"admin/request","boiler_history|previous")){
+          $("ventHistoryStatus").textContent="Αποτυχία χθεσινής λήψης.";return;
+        }
+        ventHistoryTimeout=setTimeout(()=>{
+          if(ventHistorySession===h&&!h.complete)
+            $("ventHistoryStatus").textContent="Timeout χθεσινής λήψης.";
+        },20000);
+      }else{h.complete=true;renderVentHistory();}
+      return;
+    }
+    if(p[0]!=="R"||p.length!==11)return;
+    const index=Number(p[2]);
+    if(!Number.isInteger(index)||index<0||index>88||index%8||h.seen.has(index))return;
+    const got=[];
+    for(const encoded of p.slice(3)){
+      const chunks=encoded.split(",");
+      if(chunks.length!==4)return;
+      const nums=chunks.map(v=>{
+        if(v==="null")return null;
+        if(!/^-?\d+(?:\.\d+)?$/.test(v))return NaN;
+        const n=Number(v);return Number.isFinite(n)&&n>-55&&n<125?n:NaN;
+      });
+      if(nums.some(Number.isNaN))return;
+      got.push({th1:nums[0],th2:nums[1],th3:nums[2],th4:nums[3]});
+    }
+    const dest=h.range==="compare"&&h.phase==="previous"?h.previousRows:h.rows;
+    got.forEach((r,i)=>dest[index+i]=r);
+    h.seen.add(index);renderVentHistory();
+  }
+
   function renderVentHistory() {
     const h = ventHistorySession;
     if (!h) return;
+    if(meterType(devices.get(h.id))==="BOILER")return renderBoilerHistory(h);
     const status = $("ventHistoryStatus");
     if(h.range==="days30")return renderVent30Days(h);
     const rangeTitle=h.range==="current"?"24 ώρες":h.range==="compare"?"48 ώρες · σύγκριση":"Χθες";
@@ -2153,7 +2363,7 @@
       return false;
     }
     ventHistoryClearTimeout();
-    const live=["current","compare"].includes(range)?ventLivePoint(device.state):null;
+    const live=["current","compare"].includes(range)?(meterType(device)==="BOILER"?boilerLivePoint(device.state):ventLivePoint(device.state)):null;
     ventHistorySession = {id,range,rows:Array(96).fill(null),
       previousRows:range==="compare"?Array(96).fill(null):null,
       dailyRows:range==="days30"?Array(30).fill(null):null,
@@ -2192,6 +2402,7 @@
     startVentLiveRefresh();
   }
   function handleVentHistory(id,text) {
+    if(meterType(devices.get(id))==="BOILER")return handleBoilerHistory(id,text);
     const h=ventHistorySession;
     if(!h || h.id!==id || h.complete || !$("ventHistoryDialog").open) return;
     const p=String(text).split("|");
@@ -2235,7 +2446,7 @@
       if(h.seen.size===12){
         if(h.range==="compare"&&h.phase==="current"){
           h.phase="previous";h.seen.clear();renderVentHistory();
-          const sent=publish(id,"admin/request","vent_history|previous");
+          const sent=publish(id,"admin/request",(meterType(device)==="BOILER"?"boiler_history":"vent_history")+"|previous");
           if(!sent){$("ventHistoryStatus").textContent="Δεν ξεκίνησε η λήψη χθεσινής ημέρας.";return;}
           ventHistoryTimeout=setTimeout(()=>{
             if(ventHistorySession===h&&!h.complete)
@@ -3391,7 +3602,7 @@
       const h=ventHistorySession;
       if(h && h.id===device.id && ["current","compare"].includes(h.range) &&
          $("ventHistoryDialog").open && isTemperatureDevice(device)){
-        const live=ventLivePoint(state);
+        const live=meterType(device)==="BOILER"?boilerLivePoint(state):ventLivePoint(state);
         if(live){
           h.live=live;
           const quarter=Math.floor(live.index);
