@@ -149,6 +149,7 @@ assert(b.nodes.get("otaUpdateBtn").disabled,
   "Manifest becoming unavailable must lock OTA again");
 b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.03"});
 
+{
 // Boiler four-series history uses a separate MQTT topic and wire protocol.
 const boilerId="boiler-AABBCCDDEEFF";
 b.message(boilerId,"status","online");
@@ -183,6 +184,7 @@ assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Θ4 μέση"),
   "Daily min/max/mean table must show all four sensors");
 b.nodes.get("ventHistoryDialog").close();
 
+}
 const card=b.nodes.get("devicesGrid").innerHTML;
 assert(card.includes("21,3") && card.includes("Διακόπτης RF") && card.includes("Ώρα ESP") && card.includes("Παύση λειτουργίας"));
 assert(card.includes("DHT11 Outside") && card.includes("DHT11 Inside") &&
