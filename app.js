@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.88";
+  const APP_VERSION = "5.89";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1077,7 +1077,7 @@
         if (manifest.profile === identity.profile) return true;
         if (manifest.ch1116TrialConfirmed === true &&
             boilerCh1116TrialCandidate(manifest, device)) return true;
-        // One-time, explicit SH1106-profile -> physical SSD1309 1.54-inch
+        // One-time, explicit SH1106-profile -> physical SSD1309 (1.3-inch on this user's modules)
         // migration for pre-4.00 Boiler. The current firmware must receive
         // its OWN profile in ota_https_v2; the new firmware reports SSD1309.
         const currentFw = String(device.state?.firmware || device.health?.firmware || "");
@@ -1667,10 +1667,10 @@
       const boilerDisplayMigration = meterType(device) === "BOILER" &&
         boilerDeviceIdentity(device)?.oled === "SH1106" && manifest.oled === "SSD1309";
       const boilerDisplayNotice = boilerDisplayMigration
-        ? "ΠΡΟΣΟΧΗ: Το εγκατεστημένο firmware δηλώνει SH1106. Η νέα v4.00 είναι μόνο για OLED 1,54″ SSD1309 (128×64). Επιβεβαίωσε ότι η ΦΥΣΙΚΗ οθόνη σου είναι SSD1309. Αν είναι SH1106, ακύρωσε το OTA.\n\n"
+        ? "ΠΡΟΣΟΧΗ: Το εγκατεστημένο firmware δηλώνει SH1106. Η νέα v4.00 είναι μόνο για OLED SSD1309 (128×64) — στο νέο σου hardware η SSD1309 είναι 1,3″. Η παλαιότερη ετικέτα 1,54″ ήταν λανθασμένη. Επιβεβαίωσε ότι η ΦΥΣΙΚΗ οθόνη σου είναι SSD1309. Αν είναι SH1106, ακύρωσε το OTA.\n\n"
         : "";
       const ch1116Warning = ch1116Trial
-        ? "ΠΕΙΡΑΜΑΤΙΚΟ CH1116 1,3″ (v4.02): χρησιμοποιεί SSD1309 initialization επειδή η U8g2 δεν έχει native CH1116 driver. ΔΕΝ έχει δοκιμαστεί σε hardware. Συνέχισε ΜΟΝΟ αν η πραγματική οθόνη είναι CH1116, έχεις πρόσβαση USB για ανάκτηση και αποδέχεσαι πιθανή μαύρη οθόνη. Αν είναι SH1106, ακύρωσε.\n\n"
+        ? "ΔΟΚΙΜΗ CH1116 1,54″ (v4.02): χρησιμοποιεί SSD1309 initialization επειδή η U8g2 δεν έχει native CH1116 driver. Η οθόνη λειτούργησε στο συγκεκριμένο πάνελ, αλλά η πλήρης λειτουργία firmware/OTA δεν έχει επιβεβαιωθεί σε όλες τις συσκευές. Συνέχισε ΜΟΝΟ αν η πραγματική οθόνη είναι CH1116, έχεις πρόσβαση USB για ανάκτηση και αποδέχεσαι πιθανή μαύρη οθόνη. Αν είναι SH1106, ακύρωσε.\n\n"
         : "";
 
       const confirmed = window.confirm(
@@ -4340,7 +4340,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.88", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.89", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
