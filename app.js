@@ -18,7 +18,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.82";
+  const APP_VERSION = "5.83";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -609,18 +609,32 @@
     const shown = (v, unit="", digits=1) =>
       v === null || v === undefined || v === "" || !Number.isFinite(Number(v))
         ? "—" : `${escapeHtml(formatNumber(v, digits))} ${unit}`;
+    const safemode = s.safe_mode === true;
+    const outsideSafe = safemode && s.safe_outside === true;
+    const insideSafe = safemode && s.safe_inside === true;
+    const critical = (v, affected) => affected ? "SafeMode" : shown(v, "°C");
     const sensorsOk = s.sensors_ok === true && device.health?.meter_ok !== false;
-    const relayConfirmed = firmwareAtLeast(s.firmware,1,1);
+    const relayConfirmed = firmwareAtLeast(s.firmware, 1, 1);
+    const fan = s.fan_on === true ? "ON" : s.fan_on === false ? "OFF" : "—";
+    const speed = s.speed === "high" ? "570 m³/h" : s.speed === "low" ? "440 m³/h" : "—";
+    const control = s.mode === "auto" ? "AUTO" : s.mode === "manual" ? "MANUAL" : "—";
+    const season = s.season === "summer" ? "SUMMER / Cooling" :
+      s.season === "winter" ? "WINTER / Heating" : "—";
     return `
       <section class="vent-dashboard" aria-label="Κατάσταση εξαερισμού">
         ${!relayConfirmed ? '<p class="meter-error" role="alert"><strong>Firmware πριν την 1.01: αναφέρονται αντίστροφοι χειρισμοί ON/OFF και ταχύτητας.</strong> Οι εντολές από το MQTT.app είναι απενεργοποιημένες έως την ασφαλή διόρθωση.</p>' : ""}
-        ${!sensorsOk ? '<p class="measurement-notice" role="status">Προσοχή: σφάλμα αισθητήρων. Η αυτόματη λειτουργία ακολουθεί το fail-safe του ESP.</p>' : ""}
+        ${safemode ? `<p class="meter-error" role="alert"><strong>SafeMode — FAN OFF.</strong> Πρόβλημα κρίσιμου DS18B20: ${outsideSafe ? "Outside " : ""}${insideSafe ? "Inside" : ""}. Ο ανεμιστήρας παραμένει απενεργοποιημένος μέχρι την επιβεβαίωση αποκατάστασης και την επαναφορά SafeMode.</p>` : !sensorsOk ? '<p class="measurement-notice" role="status">Προσωρινό σφάλμα κρίσιμου θερμομέτρου. Το ESP συνεχίζει τις αναγνώσεις.</p>' : ""}
         <div class="vent-measurements">
-          <div><span>Έξω (DS18B20)</span><b>${shown(s.temp_outside, "°C")}</b></div>
-          <div><span>Μέσα (DS18B20)</span><b>${shown(s.temp_inside, "°C")}</b></div>
-          <div><span>Ενδιάμεσα</span><b>${shown(s.temp_middle, "°C")}</b></div>
-          <div><span>Υγρασία έξω</span><b>${shown(s.humidity_outside, "%", 0)}</b></div>
-          <div><span>Υγρασία μέσα</span><b>${shown(s.humidity_inside, "%", 0)}</b></div>
+          <div><span>Έξω (DS18B20)</span><b>${critical(s.temp_outside,outsideSafe)}</b></div>
+          <div><span>Μέσα (DS18B20)</span><b>${critical(s.temp_inside,insideSafe)}</b></div>
+          <div><span>Ενδιάμεσα (DS18B20)</span><b>${shown(s.temp_middle, "°C")}</b></div>
+        </div>
+        <div class="vent-dht-measurements">
+          <div><strong>DHT11 Outside</strong> · ${shown(s.dht_temp_outside,"°C")} · Humidity: ${shown(s.humidity_outside,"%",1)} · Absolute humidity: ${shown(s.absolute_humidity_outside,"g/m³")} · Outside feels like: ${shown(s.feels_like_outside,"°C")}</div>
+          <div><strong>DHT11 Inside</strong> · ${shown(s.dht_temp_inside,"°C")} · Humidity: ${shown(s.humidity_inside,"%",1)} · Absolute humidity: ${shown(s.absolute_humidity_inside,"g/m³")} · Inside feels like: ${shown(s.feels_like_inside,"°C")}</div>
+        </div>
+        <p class="vent-operation-line">Control: <b>${control}</b> · Fan: <b>${fan}</b> · Speed: <b>${speed}</b> · Season: <b>${season}</b></p>
+        <div class="vent-measurements">
           <div><span>Διακόπτης RF</span><b>${s.rf_high === true ? "ON" : s.rf_high === false ? "OFF" : "—"}</b></div>
         </div>
         <p class="vent-time-schedule">Ώρα ESP <b>${escapeHtml(s.time || "—")}</b> ${s.time_synced === false ? "· χωρίς NTP " : ""}— Παύση λειτουργίας <b>${escapeHtml(s.stop_from || "—")} – ${escapeHtml(s.stop_to || "—")}</b></p>

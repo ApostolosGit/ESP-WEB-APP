@@ -1474,3 +1474,9 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 #adminDialog.boiler-ota-only #dualZoneSettings,
 #adminDialog.boiler-ota-only #ventilationSettings,
 #adminDialog.boiler-ota-only .restart-settings { display: none !important; }
+
+/* Ventilation v2.03: DHT readings directly after DS18B20 and real fan state. */
+.vent-dht-measurements { display:grid; grid-template-columns:1fr; gap:8px; margin-top:10px; }
+.vent-dht-measurements > div { padding:10px 12px; border:1px solid var(--line,#8893a55a); border-radius:10px; font-size:.9rem; line-height:1.65; overflow-wrap:anywhere; }
+.vent-operation-line { font-size:.98rem; line-height:1.7; margin:12px 1px; }
+.vent-operation-line b { font-variant-numeric:tabular-nums; }
