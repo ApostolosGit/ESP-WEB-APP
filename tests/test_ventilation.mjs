@@ -150,33 +150,33 @@ assert(b.nodes.get("otaUpdateBtn").disabled,
 b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.03"});
 
 // Boiler four-series history uses a separate MQTT topic and wire protocol.
-const boiler="boiler-AABBCCDDEEFF";
-b.message(boiler,"status","online");
-b.message(boiler,"health",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
+const boilerId="boiler-AABBCCDDEEFF";
+b.message(boilerId,"status","online");
+b.message(boilerId,"health",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
   application:"boiler",platform_version:"1.05",profile:"esp32c3-boiler-4ds18b20-sh1106",
   driver:"4xDS18B20",oled:"SH1106",ota_protocol:2,meter_ok:true});
-b.message(boiler,"state",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
+b.message(boilerId,"state",{meter:"BOILER",device_type:"BOILER",firmware:"3.05",
   temp_1:15.1,temp_2:17.2,temp_3:22.3,temp_4:23.4,time:"11:30:00",sensors_ok:true});
 const boilerCard=b.nodes.get("devicesGrid").innerHTML;
 assert(boilerCard.includes("Θ1")&&boilerCard.includes("Θ2")&&
   boilerCard.includes("Θ3")&&boilerCard.includes("Θ4"));
-b.app.openVentHistory(boiler);
+b.app.openVentHistory(boilerId);
 assert(b.published.some(p=>p.payload==="boiler_history|current"),
   "Boiler must request four-sensor history, not two-sensor Ventilation history");
 for(let offset=0;offset<=88;offset+=8){
  const points=Array(8).fill("15.1,17.2,22.3,23.4").join("|");
- b.message(boiler,"boiler/history","R|current|"+offset+"|"+points);
+ b.message(boilerId,"boiler/history","R|current|"+offset+"|"+points);
 }
-b.message(boiler,"boiler/history","E|current");
+b.message(boilerId,"boiler/history","E|current");
 assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Boiler Θ1 Θ2 Θ3 Θ4"));
 assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Θ4"),
   "Boiler graph must include TH4 and its own color");
-b.app.requestVentHistory(boiler,"days30");
+b.app.requestVentHistory(boilerId,"days30");
 for(let offset=0;offset<=27;offset+=3){
  const d=Array(3).fill("50400,15.1,15.9,15.5,16.1,16.9,16.5,17.1,17.9,17.5,18.1,18.9,18.5").join("|");
- b.message(boiler,"boiler/history","D|"+offset+"|"+d);
+ b.message(boilerId,"boiler/history","D|"+offset+"|"+d);
 }
-b.message(boiler,"boiler/history","E|days30");
+b.message(boilerId,"boiler/history","E|days30");
 assert(b.nodes.get("ventHistoryChart").innerHTML.includes("Θ4"),
   "30d graph must include four independent daily series");
 assert(b.nodes.get("ventHistoryTable").innerHTML.includes("Θ4 μέση"),
