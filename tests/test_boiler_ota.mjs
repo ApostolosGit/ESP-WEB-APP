@@ -103,7 +103,7 @@ availability(b,target);
 assert.match(b.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW/);
 await b.app.startRemoteOta(id);
 assert.equal(b.prompts.length,1);
-assert.match(b.prompts[0],/1,54/);
+assert.match(b.prompts[0],/1,3/);
 assert.match(b.prompts[0],/SSD1309/);
 assert.match(b.prompts[0],/SH1106/);
 assert.equal(otaMessages(b).length,0);
@@ -138,7 +138,7 @@ assert(b.app.otaManifestMatchesDevice(target,b.app.devices.get(id)),
 const sh1106 = manifest('4.01','SH1106');
 const sh1106ManifestUrl = base + 'manifest-boiler-sh1106.txt';
 const ssdManifestUrl = base + 'manifest-boiler.txt';
-// SH1106 1.3-inch and SSD1309 1.54-inch devices must fetch separate manifests.
+// Legacy SH1106 and SSD1309 devices must fetch separate profiles; physical module sizes are hardware-specific (CH1116 1.54-inch, SSD1309 1.3-inch).
 b=boot();b.frame('health',health('3.05','SH1106'));
 assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),sh1106ManifestUrl);
 assert(b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)));
@@ -163,7 +163,7 @@ assert.equal(b.app.getSession(),null,'Fresh SH1106 4.01 health confirms successf
 b=boot();b.frame('health',health('4.00','SSD1309'));
 assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),ssdManifestUrl);
 assert(!b.app.otaManifestMatchesDevice(sh1106,b.app.devices.get(id)),
-  'SSD1309 1.54-inch must never automatically receive SH1106 firmware');
+  'SSD1309 must never automatically receive SH1106 firmware');
 assert(b.app.otaManifestMatchesDevice(target,b.app.devices.get(id)));
 b=boot();b.frame('health',health('4.01','SH1106'));
 assert.equal(b.app.otaManifestUrlForDevice(b.app.devices.get(id)),sh1106ManifestUrl);
@@ -187,7 +187,7 @@ assert(!b.app.otaManifestMatchesDevice({...trial,ch1116TrialConfirmed:true,file:
 await b.app.startRemoteOta(id,true);
 assert(b.fetched.some(u=>String(u).startsWith(trialManifestUrl+'?cb=')),'CH1116 test checks only its own experimental manifest');
 assert.equal(b.prompts.length,1);
-assert.match(b.prompts[0],/ΠΕΙΡΑΜΑΤΙΚΟ CH1116/);
+assert.match(b.prompts[0],/ΔΟΚΙΜΗ CH1116 1,54/);
 assert.match(b.prompts[0],/USB/);
 assert.match(b.prompts[0],/SSD1309/);
 assert.equal(otaMessages(b).length,0);
