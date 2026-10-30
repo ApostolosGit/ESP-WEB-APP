@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.85";
+  const APP_VERSION = "5.86";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -944,6 +944,10 @@
         (!/^\d+\.\d+(?:\.\d+)?$/.test(manifest.version) || !validVentilationProfile(manifest))) {
       throw new Error("Το Ventilation manifest δεν περιέχει έγκυρο προφίλ firmware.");
     }
+    if (manifest.meter === "BOILER" && firmwareAtLeast(manifest.version, 3, 0) &&
+        (!/^\d+\.\d+(?:\.\d+)?$/.test(manifest.version) || !validBoilerProfile(manifest))) {
+      throw new Error("Το Boiler manifest δεν περιέχει έγκυρο προφίλ firmware.");
+    }
     return manifest;
   }
 
@@ -995,6 +999,14 @@
       (manifest.meter === "BOILER" && firmwareAtLeast(manifest.version,3,0));
   }
 
+  function validBoilerProfile(identity) {
+    const display = identity.oled === "SH1106" ? "sh1106" :
+      (identity.oled === "SSD1309" ? "ssd1309" : "");
+    return identity.application === "boiler" && identity.driver === "4XDS18B20" &&
+      display !== "" && identity.ota_protocol === 2 &&
+      identity.profile === `esp32c3-boiler-4ds18b20-${display}`;
+  }
+
   function boilerDeviceIdentity(device) {
     const state=device.state || {}, health=device.health || {};
     const current=String(state.firmware || health.firmware || "");
@@ -1007,9 +1019,7 @@
       profile:String(frame.profile || ""),
       ota_protocol:Number(frame.ota_protocol || 0)
     };
-    return identity.application==="boiler" && identity.driver==="4XDS18B20" &&
-      identity.oled==="SH1106" && identity.ota_protocol===2 &&
-      identity.profile==="esp32c3-boiler-4ds18b20-sh1106" ? identity : null;
+    return validBoilerProfile(identity) ? identity : null;
   }
 
   function validVentilationProfile(identity) {
@@ -1045,10 +1055,16 @@
       if (manifest.meter!=="BOILER" || !match ||
           manifest.version!==`${Number(match[1])}.${match[2]}`) return false;
       if (otaManifestNeedsProfile(manifest)) {
-        const identity=boilerDeviceIdentity(device);
-        return Boolean(identity && manifest.application==="boiler" &&
-          manifest.driver==="4XDS18B20" && manifest.oled==="SH1106" &&
-          manifest.ota_protocol===2 && manifest.profile===identity.profile);
+        const identity = boilerDeviceIdentity(device);
+        if (!identity || !validBoilerProfile(manifest)) return false;
+        if (manifest.profile === identity.profile) return true;
+        // One-time, explicit SH1106-profile -> physical SSD1309 1.54-inch
+        // migration for pre-4.00 Boiler. The current firmware must receive
+        // its OWN profile in ota_https_v2; the new firmware reports SSD1309.
+        const currentFw = String(device.state?.firmware || device.health?.firmware || "");
+        return manifest.version === "4.00" && manifest.oled === "SSD1309" &&
+          identity.oled === "SH1106" && firmwareAtLeast(currentFw, 3, 0) &&
+          compareFirmwareVersions(currentFw, "4.00") < 0;
       }
       return boilerDeviceIdentity(device)===null;
     }
@@ -1595,12 +1611,17 @@
       const ventilationMigrationNotice = ventilationManifestNeedsProfile(manifest) && !ventilationDeviceNeedsProfile(device)
         ? "Μετά την εγκατάσταση η τοπική σελίδα και το setup/recovery θα είναι στη διεύθυνση http://192.168.1.81/. Το Ventilation λειτουργεί χωρίς OLED.\n\n"
         : "";
+      const boilerDisplayMigration = meterType(device) === "BOILER" &&
+        boilerDeviceIdentity(device)?.oled === "SH1106" && manifest.oled === "SSD1309";
+      const boilerDisplayNotice = boilerDisplayMigration
+        ? "ΠΡΟΣΟΧΗ: Το εγκατεστημένο firmware δηλώνει SH1106. Η νέα v4.00 είναι μόνο για OLED 1,54″ SSD1309 (128×64). Επιβεβαίωσε ότι η ΦΥΣΙΚΗ οθόνη σου είναι SSD1309. Αν είναι SH1106, ακύρωσε το OTA.\n\n"
+        : "";
 
       const confirmed = window.confirm(
         `OTA αναβάθμιση ${id}\n\n` +
         `Τρέχουσα έκδοση συσκευής: ${currentFw}\n` +
         `Available OTA: ${manifest.version}${oledText}${newBadge}\n\n` +
-        legacyDisplayNotice + ventilationMigrationNotice +
+        legacyDisplayNotice + ventilationMigrationNotice + boilerDisplayNotice +
         "Ο ESP θα αποσυνδεθεί προσωρινά από MQTT και θα επανεκκινήσει. Συνέχεια;"
       );
 
