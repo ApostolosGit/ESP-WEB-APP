@@ -1,4 +1,14 @@
-# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.87
+# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.88
+
+## 5.88 — Boiler experimental CH1116 1.3-inch OLED trial
+
+- A separate **ΔΟΚΙΜΗ OLED CH1116 · v4.02** action is shown only for Boiler firmware v3.xx–4.01 reporting a valid SH1106 profile. It is never launched automatically.
+- U8g2 has no native CH1116 driver; this v4.02 uses **SSD1309 initialization as an alternate compatibility experiment**, whereas the standard SH1106 v4.01 already uses the SH1106 initializer.
+- The trial fetches only `manifest-boiler-ch1116-test.txt`. Cross-profile authorization is enabled strictly after a specific CH1116/USB-recovery confirmation and the existing PIN; the firmware OTA v2 command still carries the installed device's current SH1106 profile.
+- A successful OTA result requires fresh post-disconnect health reporting both v4.02 and the distinct `esp32c3-boiler-4ds18b20-ch1116` identity. This only validates firmware identity, **not whether the OLED physically works**.
+- Stable SH1106 v4.01 and SSD1309 v4.00 OTA manifests stay independent. **No device hardware validation, no automatic update.**
+
+
 
 ## 5.87 — Boiler v4.01 SH1106 1.3-inch and v4.00 SSD1309 1.54-inch OTA
 
