@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.84'));
-assert(appSource.includes('const APP_VERSION = "5.84"'));
+assert(html.includes('v=5.85'));
+assert(appSource.includes('const APP_VERSION = "5.85"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
