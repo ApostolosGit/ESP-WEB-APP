@@ -9,7 +9,7 @@ const id = 'boiler-18FE34000001';
 const md5 = '0123456789abcdef0123456789abcdef';
 
 function profile(oled='SH1106') {
-  return {application:'boiler',platform_version:'1.05',driver:'4xDS18B20',oled,
+  return {application:'boiler',platform_version:'1.05',driver:'4XDS18B20',oled,
     profile:'esp32c3-boiler-4ds18b20-'+oled.toLowerCase(),ota_protocol:2};
 }
 function health(version='3.05',oled='SH1106',changes={}) {
