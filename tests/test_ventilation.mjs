@@ -54,8 +54,8 @@ const connection=ctx.mqtt.connect;
  // Use the real application connect by exposing it from the closure below.
 assert(html.includes('id="ventilationSettings"'));
 assert(html.includes('id="ventHistoryDialog"'));
-assert(html.includes('v=5.82'));
-assert(appSource.includes('const APP_VERSION = "5.82"'));
+assert(html.includes('v=5.83'));
+assert(appSource.includes('const APP_VERSION = "5.83"'));
 assert(appSource.includes('type === "VENTILATION"'));
 assert(appSource.includes("manifest-ventilation.txt"));
 assert(appSource.includes('if (otaResponse && !ok && otaSession && otaSession.id === id)'),
@@ -151,6 +151,26 @@ b.message(vid,"state",{...b.app.devices.get(vid).state,firmware:"1.03"});
 
 const card=b.nodes.get("devicesGrid").innerHTML;
 assert(card.includes("21,3") && card.includes("Διακόπτης RF") && card.includes("Ώρα ESP") && card.includes("Παύση λειτουργίας"));
+assert(card.includes("DHT11 Outside") && card.includes("DHT11 Inside") &&
+  card.includes("Absolute humidity") && card.includes("Inside feels like"),
+  "DHT11 measurements must render immediately after DS18B20");
+assert(card.includes("Control:") && card.includes("Fan:") &&
+  card.includes("Speed:") && card.includes("Season:"),
+  "Main card must show confirmed fan operating state");
+b.message(vid,"state",{...b.app.devices.get(vid).state,
+  firmware:"2.03",safe_mode:true,safe_outside:true,safe_inside:false,
+  temp_outside:null,temp_inside:21.3,absolute_humidity_inside:13.7,
+  humidity_inside:83,dht_temp_inside:21,feels_like_inside:19.4,
+  fan_on:false,speed:"high",mode:"auto",season:"winter"});
+const safeCard=b.nodes.get("devicesGrid").innerHTML;
+assert(safeCard.includes("SafeMode") && safeCard.includes("SAFE") === false,
+  "Critical Outside should show SafeMode in its temperature cell");
+assert(safeCard.includes("13,7") && safeCard.includes("19,4"),
+  "APP must display received DHT absolute humidity and feels-like data");
+assert(safeCard.includes("570 m³/h") && safeCard.includes("WINTER / Heating"),
+  "APP must show requested speed and season");
+b.message(vid,"state",{...b.app.devices.get(vid).state,safe_mode:false,safe_outside:false,
+  temp_outside:15.2,firmware:"1.03"});
 assert(!card.includes("Έλεγχος 220V"));
 assert(!card.includes("Οι εντολές MANUAL επηρεάζουν"));
 assert(!card.includes("Χαμηλή ταχύτητα"));
