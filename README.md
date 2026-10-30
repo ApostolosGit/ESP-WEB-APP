@@ -1,4 +1,13 @@
-# Energy DDS / JSY / Ventilation — MQTT.app v5.81
+# Energy DDS / JSY / Ventilation / Boiler — MQTT.app v5.86
+
+## 5.86 — Boiler v4.00 SSD1309 1.54-inch OLED OTA
+
+- Boiler v4.00 OTA requires SSD1309 128×64 and reports profile `esp32c3-boiler-4ds18b20-ssd1309`.
+- The app verifies Boiler SH1106 and SSD1309 identity profiles. For the one-time v3.xx → v4.00 migration from firmware reporting SH1106, it warns the user to confirm that the **physical** screen is SSD1309 before the existing PIN authorization.
+- The existing Boiler OTA `ota_https_v2` command sends the installed firmware's original profile; successful completion requires a fresh v4.00 health frame with the new SSD1309 profile after disconnect/reconnect.
+- Only ESP32-C3 application-only firmware is delivered, not a full-chip USB merged BIN. No automatic OTA installation; hardware verification still required.
+
+
 
 ## 5.81 — Ventilation 2.00 on the common platform
 
