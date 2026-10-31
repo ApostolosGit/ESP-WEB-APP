@@ -83,7 +83,7 @@ visibility.app.selectTarget(vent);
 visibility.setManifest(published707);
 await visibility.app.refreshOtaAvailability(vent);
 assert(visibility.fetched.some(url=>url.startsWith(base+'manifest-ventilation.txt?cb=')));
-assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\\.07/);
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\.07/);
 assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,false,'Valid v7.06 identity should enable 7.07');
 visibility=boot();
 const invalidHealth=health('7.06');
@@ -93,7 +93,7 @@ visibility.app.selectTarget(vent);
 visibility.setManifest(published707);
 await visibility.app.refreshOtaAvailability(vent);
 assert(visibility.fetched.some(url=>url.startsWith(base+'manifest-ventilation.txt?cb=')),'Public release check must bypass premature health-profile gate');
-assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\\.07/);
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\.07/);
 assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/απενεργοποιημένο/);
 assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,true,'Missing identity must NOT allow flashing');
 await visibility.app.startRemoteOta(vent);
@@ -105,7 +105,7 @@ visibility.frame(vent,'state',{meter:'VENTILATION',firmware:'7.06'});
 visibility.app.selectTarget(vent);
 visibility.setManifest(published707);
 await visibility.app.refreshOtaAvailability(vent);
-assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/7\\.07/);
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/7\.07/);
 assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,true,'Stale health must not authorize OTA');
 
 // The production file spelling remains accepted by installed 1.xx downloaders.
