@@ -41,7 +41,7 @@ function boot() {
     }}
   };
   vm.createContext(ctx);
-  const bridge = 'globalThis.testApp={devices,connect,parseOtaManifest,otaManifestMatchesDevice,otaManifestUrlForDevice,energyDeviceIdentity,ventilationDeviceIdentity,renderOtaAvailability,selectTarget:id=>adminTargetId=id,remoteOtaCommand,startRemoteOta,confirmOtaFromHealth,setSession:v=>otaSession=v,getSession:()=>otaSession,getPending:()=>otaAwaitingStart};})();';
+  const bridge = 'globalThis.testApp={devices,connect,parseOtaManifest,otaManifestMatchesDevice,otaManifestUrlForDevice,energyDeviceIdentity,ventilationDeviceIdentity,renderOtaAvailability,refreshOtaAvailability,selectTarget:id=>adminTargetId=id,remoteOtaCommand,startRemoteOta,confirmOtaFromHealth,setSession:v=>otaSession=v,getSession:()=>otaSession,getPending:()=>otaAwaitingStart};})();';
   vm.runInContext(source.replace(/\}\)\(\);\s*$/, bridge),ctx);
   const app = ctx.testApp;
   app.connect(settings);
@@ -73,6 +73,40 @@ function availability(b,m) {
   b.app.renderOtaAvailability(b.app.devices.get(vent),m);
   b.setManifest(m);
 }
+
+// Public v7.07 must be visible even when a live MQTT health identity is missing.
+// The remote OTA action must remain blocked until the real device profile matches.
+let visibility=boot();
+const published707=manifest('7.07',{platform_version:'1.04',size:588464,md5:'14226d45be7fc6fa12e9153efe7e4996'});
+visibility.frame(vent,'health',health('7.06'));
+visibility.app.selectTarget(vent);
+visibility.setManifest(published707);
+await visibility.app.refreshOtaAvailability(vent);
+assert(visibility.fetched.some(url=>url.startsWith(base+'manifest-ventilation.txt?cb=')));
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\\.07/);
+assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,false,'Valid v7.06 identity should enable 7.07');
+visibility=boot();
+const invalidHealth=health('7.06');
+delete invalidHealth.profile;
+visibility.frame(vent,'health',invalidHealth);
+visibility.app.selectTarget(vent);
+visibility.setManifest(published707);
+await visibility.app.refreshOtaAvailability(vent);
+assert(visibility.fetched.some(url=>url.startsWith(base+'manifest-ventilation.txt?cb=')),'Public release check must bypass premature health-profile gate');
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/Available.*NEW.*7\\.07/);
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/απενεργοποιημένο/);
+assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,true,'Missing identity must NOT allow flashing');
+await visibility.app.startRemoteOta(vent);
+assert.equal(otaMessages(visibility).length,0,'No MQTT OTA command without full profile');
+// A previously valid health from a different firmware cannot authorize OTA.
+visibility=boot();
+visibility.frame(vent,'health',health('7.05'));
+visibility.frame(vent,'state',{meter:'VENTILATION',firmware:'7.06'});
+visibility.app.selectTarget(vent);
+visibility.setManifest(published707);
+await visibility.app.refreshOtaAvailability(vent);
+assert.match(visibility.nodes.get('otaTargetInfo').innerHTML,/7\\.07/);
+assert.equal(visibility.nodes.get('otaUpdateBtn').disabled,true,'Stale health must not authorize OTA');
 
 // The production file spelling remains accepted by installed 1.xx downloaders.
 let b=boot(); const first=manifest();
