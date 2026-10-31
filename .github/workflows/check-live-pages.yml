@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE="https://apostolosgit.github.io/dds238-app"
+          BASE="https://apostolosgit.github.io/ESP-WEB-APP"
           mkdir -p live
           for attempt in $(seq 1 10); do
             nonce="$(date +%s)-$attempt"
