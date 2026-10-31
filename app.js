@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.89";
+  const APP_VERSION = "5.90";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -1152,10 +1152,14 @@
     return OTA_MANIFEST_BASE_URL + file;
   }
 
-  async function loadOtaManifest(device, ch1116Trial = false) {
+  async function loadOtaManifest(device, ch1116Trial = false, availabilityOnly = false) {
+    // Display the PUBLIC Ventilation release independently of MQTT health identity.
+    // Actual OTA remains strictly gated by otaManifestMatchesDevice() and the live profile.
     const sourceUrl = ch1116Trial
       ? BOILER_OTA_BASE_URL + "manifest-boiler-ch1116-test.txt"
-      : otaManifestUrlForDevice(device);
+      : availabilityOnly && meterType(device) === "VENTILATION"
+        ? OTA_MANIFEST_BASE_URL + "manifest-ventilation.txt"
+        : otaManifestUrlForDevice(device);
     const manifestUrl = `${sourceUrl}?cb=${Date.now()}`;
     const response = await fetch(manifestUrl, {
       cache: "no-store"
@@ -1166,7 +1170,7 @@
     return parseOtaManifest(await response.text());
   }
 
-  function renderOtaAvailability(device, manifest = null, checking = false, checkFailed = false) {
+  function renderOtaAvailability(device, manifest = null, checking = false, checkFailed = false, checkError = "") {
     if (!device || !ui.otaTargetInfo) return;
     const isVentilation = meterType(device) === "VENTILATION";
     const isBoiler = meterType(device) === "BOILER";
@@ -1196,11 +1200,12 @@
       else if (ventilationDeviceNeedsProfile(device)) parts.push('<span class="ota-checking-line">Αναμονή πλήρους ταυτότητας firmware από τη συσκευή.</span>');
     }
 
-    const hasNewer = Boolean(
-      manifest &&
-      otaManifestMatchesDevice(manifest, device) &&
-      compareFirmwareVersions(manifest.version, currentFw) > 0
-    );
+    const releaseIsNewer = Boolean(manifest && isVentilation &&
+      manifest.meter === "VENTILATION" &&
+      compareFirmwareVersions(manifest.version, currentFw) > 0);
+    const profileMatches = Boolean(manifest && otaManifestMatchesDevice(manifest, device));
+    const hasNewer = Boolean(manifest && profileMatches &&
+      compareFirmwareVersions(manifest.version, currentFw) > 0);
 
     if (isBoiler) {
       if (hasNewer) boilerOtaAvailable.set(device.id,{
@@ -1218,6 +1223,11 @@
       parts.push(
         `<span class="ota-available-line">Available <span class="ota-new-blink">NEW</span> updates: <b>${escapeHtml(manifest.version)}</b></span>`
       );
+    } else if (releaseIsNewer) {
+      parts.push(
+        `<span class="ota-available-line">Available <span class="ota-new-blink">NEW</span> updates: <b>${escapeHtml(manifest.version)}</b></span>`,
+        '<span class="ota-checking-line">Η έκδοση υπάρχει στον OTA server, αλλά το OTA-UPDATE παραμένει απενεργοποιημένο: δεν έχει επιβεβαιωθεί συμβατό προφίλ από το MQTT health της συσκευής.</span>'
+      );
     } else if (checking) {
       parts.push('<span class="ota-checking-line">Έλεγχος διαθέσιμης έκδοσης…</span>');
     } else if (checkFailed) {
@@ -1225,7 +1235,7 @@
       parts.push(isBoiler
         ? '<span class="ota-checking-line">Δεν έχει δημοσιευτεί ακόμη νέο Boiler OTA στον ξεχωριστό OTA server.</span>'
         : isVentilation
-        ? '<span class="ota-checking-line">Δεν υπάρχει δημοσιευμένο Ventilation OTA ή δεν ήταν δυνατός ο έλεγχος.</span>'
+        ? `<span class="ota-checking-line">Αποτυχία ελέγχου Ventilation OTA server: ${escapeHtml(checkError || "Άγνωστο σφάλμα")}</span>`
         : headlessEnergy
         ? '<span class="ota-checking-line">Δεν υπάρχει διαθέσιμη OTA έκδοση για το προφίλ χωρίς OLED.</span>'
         : '<span class="ota-checking-line">Update check unavailable</span>');
@@ -1254,16 +1264,12 @@
     if (meterType(device) === "BOILER" && !firmwareAtLeast(device.state?.firmware,1,1)) return;
 
     try {
-      const manifest = await loadOtaManifest(device);
+      const manifest = await loadOtaManifest(device, false, true);
       if (adminTargetId !== id) return;
       renderOtaAvailability(device, manifest, false);
     } catch (error) {
       if (adminTargetId !== id) return;
-      renderOtaAvailability(device, null, false, true);
-      if (meterType(device) === "VENTILATION" && /HTTP 404/.test(String(error?.message || error))) {
-        ui.otaTargetInfo.textContent =
-          "Firmware 1.04: υποστηρίζεται MQTT OTA, αλλά λείπει το manifest-ventilation.txt από το δημόσιο ESP8266-OTA. Δεν υπάρχει ακόμη διαθέσιμη αναβάθμιση. Τοπική αναβάθμιση: http://192.168.1.77/recovery-update";
-      }
+      renderOtaAvailability(device, null, false, true, String(error?.message || error));
     }
   }
 
@@ -2716,9 +2722,8 @@
     if (!isTemperatureDevice(device) && firmwareAtLeast(fw, 3, 0) && client && client.connected) {
       setTimeout(() => refreshUtilityRows(id, false), 0);
     }
-    if (client && client.connected) {
-      setTimeout(() => refreshOtaAvailability(id), 0);
-    }
+    // The public manifest remains available even while MQTT is disconnected.
+    setTimeout(() => refreshOtaAvailability(id), 0);
   }
 
   function setAdminStatus(message, kind = "") {
