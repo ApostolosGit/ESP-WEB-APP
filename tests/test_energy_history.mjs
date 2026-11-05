@@ -184,7 +184,7 @@ while(context.historySession.phase==='recent') recentOffsets.push(rawPage());
 assert.deepEqual(recentOffsets,[0,118,134,150]);
 assert.equal(context.historySession.offset,86,'Backfill begins nearest the recent-day boundary');
 assert($('energyHistoryPlot').innerHTML.includes('<svg'));
-assert(!$('energyHistoryPlot').innerHTML.includes('daily-stats-legend-box'),'Hourly charts stay unchanged');
+assert(!$('energyHistoryPlot').innerHTML.includes('history-daily-stats'),'Hourly charts stay unchanged');
 assert(context.historySession.groups.slice(0,24).some(g=>g.values));
 assert(context.historySession.groups.slice(24).every(g=>g.values===null && g.pending),'Lower graph waits until the upper day has been revealed');
 assert.equal($('energyHistoryTable').innerHTML,'');
@@ -263,13 +263,17 @@ deliver(daysFixture.slice(0,16),16,1);
 assert.equal(context.historySession.complete,true);
 assert.equal(context.historySession.rows.size,30);
 assert(context.historySession.groups.every(g=>g.values));
-assert($('energyHistoryPlot').innerHTML.includes('daily-stats-legend-box'));
-assert($('energyHistoryPlot').innerHTML.includes('daily-stats-legend-alpha'));
-assert($('energyHistoryPlot').innerHTML.includes('daily-stats-legend-mean'));
-assert($('energyHistoryPlot').innerHTML.includes('daily-stats-legend-week'));
-assert(!$('energyHistoryPlot').innerHTML.includes('trend-sigma-curve'));
-assert(!$('energyHistoryPlot').innerHTML.includes('trend-mean-line'));
-assert(!$('energyHistoryPlot').innerHTML.includes('trend-fit-line'));
+const dailyHtml=$('energyHistoryPlot').innerHTML;
+assert(dailyHtml.includes('class="history-daily-stats"'));
+assert(dailyHtml.includes('<strong>α:</strong>'));
+assert(dailyHtml.includes('<strong>Μ.Ο.:</strong>'));
+assert(dailyHtml.includes('<strong>7ήμερο:</strong>'));
+assert(dailyHtml.indexOf('history-daily-stats') < dailyHtml.indexOf('<svg '),'Stats precede bars without changing SVG');
+const legacyDailySvg=EnergyHistory.svg(context.historySession.groups,true);
+assert.equal(dailyHtml.slice(dailyHtml.indexOf('<svg ')),legacyDailySvg,
+  'The in-app daily SVG is EXACTLY the unchanged legacy SVG');
+for(const layer of ['trend-sigma-curve','trend-mean-line','trend-fit-line','daily-stats-legend-box'])
+  assert(!dailyHtml.includes(layer),'Removed overlay must remain absent: '+layer);
 assert.equal(($('energyHistoryPlot').innerHTML.match(/<svg /g)||[]).length,1);
 assert(!context.historySession.groups.some(g=>g.pending));
 assert.equal(context.energyHistoryCsvRows().length,31);
@@ -302,58 +306,65 @@ assert(Math.abs(trend.average-15.5)<1e-10);
 assert(Math.abs(trend.alpha-1)<1e-10);
 assert(Math.abs(trend.beta)<1e-10);
 assert.equal(trend.points[0].value,1); // Chronological fit: oldest to newest.
-const barsOnly=H.svg(trendFixture,true,trendFixture,true);
-assert(barsOnly.includes('<rect'), '30-day bars remain');
-assert.equal((barsOnly.match(/<svg /g)||[]).length,1,'Only one SVG chart');
+// A permanent fingerprint of the v5.90 function prevents future bar regressions:
+const source=fs.readFileSync(resolve(root,'history.js'),'utf8');
+const svgStart=source.indexOf('  function svg(');
+const svgStop=source.indexOf('  function dailyTrendStats(',svgStart);
+assert(svgStart>=0 && svgStop>svgStart);
+const unchangedV590Svg=source.slice(svgStart,svgStop).trimEnd()+'\n';
+let v590Fingerprint=2166136261>>>0;
+for(let i=0;i<unchangedV590Svg.length;i++)
+  v590Fingerprint=Math.imul(v590Fingerprint ^ unchangedV590Svg.charCodeAt(i),16777619)>>>0;
+assert.equal(v590Fingerprint.toString(16).padStart(8,'0'),'765d5851',
+  'The original v5.90 SVG rendering function must remain byte-for-byte unchanged');
+const barsOnly=H.svg(trendFixture,true);
+const stats=H.dailyBarStatistics(trendFixture);
+assert(barsOnly.includes('<rect'),'Original 30-day bars remain');
+assert.equal((barsOnly.match(/<svg /g)||[]).length,1,'Only one original SVG');
 assert.equal((barsOnly.match(/class="bar-value"/g)||[]).length,30);
-assert(barsOnly.includes('class="daily-stats-legend-box"'));
-assert(barsOnly.includes('class="daily-stats-legend-alpha"'));
-assert(barsOnly.includes('class="daily-stats-legend-mean"'));
-assert(barsOnly.includes('class="daily-stats-legend-week"'));
-assert(barsOnly.includes('Μ.Ο.: 15,5 kWh/ημέρα (30/30)'));
-assert(barsOnly.includes('α: +1'));
-for(const removed of ['trend-sigma-curve','trend-sigma-point','trend-mean-line','trend-fit-line','energy-trend-panel']) {
-  assert(!barsOnly.includes(removed),removed+' must not appear on bars-only chart');
-}
-assert(barsOnly.indexOf('daily-stats-legend-box') < barsOnly.lastIndexOf('</svg>'),'Legend stays inside the SVG');
-assert(!H.svg(trendFixture,true).includes('daily-stats-legend-box'),'Regular hourly chart unaffected');
+assert(barsOnly.includes('viewBox="0 0 '));
+assert(barsOnly.includes(' 310"'), 'Original 310px SVG height restored');
+assert(barsOnly.includes(' y="282"'), 'Original daily X label height restored');
+assert(!barsOnly.includes('history-daily-stats'),'Stats must NEVER alter SVG coordinates');
+assert(!barsOnly.includes('daily-stats-legend-box'));
+assert(stats.includes('class="history-daily-stats"'));
+assert(stats.includes('α:</strong> +1,00'));
+assert(stats.includes('Μ.Ο.:</strong> 15,5 kWh/ημέρα (30/30)'));
+assert(stats.includes('7ήμερο:</strong> +36,8%'));
+assert(!stats.includes('NaN')&&!stats.includes('Infinity'));
 const weeks=H.dailyWeeklyComparison(trendFixture);
 assert.equal(weeks.currentCount,7);
 assert.equal(weeks.previousCount,7);
 assert.equal(weeks.currentAverage,26);
 assert.equal(weeks.previousAverage,19);
 assert(Math.abs(weeks.pct-700/19)<1e-10);
-assert(barsOnly.includes('7ήμερο / προηγούμενο:'));
-assert(barsOnly.includes('(7/7, 7/7)'));
-assert(H.svg([{label:'<script>',values:[1,0,0],flags:0,coveredSeconds:86400}],true,undefined,true).includes('&lt;script&gt;'));
 const unreliable=trendFixture.map((g,i)=>({...g,
   values:i===4?null:g.values,flags:i===5?16:i===6?2:0,
   coveredSeconds:i===7?3600:86400}));
 const reliableStats=H.dailyTrendStats(unreliable);
-assert.equal(reliableStats.count,26,'Missing/current/estimated/short days excluded from regression');
+assert.equal(reliableStats.count,26,'Missing/current/estimated/short days excluded');
 const unreliableWeek=H.dailyWeeklyComparison(unreliable);
 assert.equal(unreliableWeek.currentCount,3);
-assert.equal(unreliableWeek.pct,null,'Incomplete weeks do not produce misleading %');
-const sparseChart=H.svg(unreliable,true,unreliable,true);
-assert(sparseChart.includes('Μ.Ο.:'));
-assert(sparseChart.includes('(26/30)'));
-assert(sparseChart.includes('χρειάζονται ≥5 πλήρεις ημέρες'));
-assert(!sparseChart.includes('NaN')&&!sparseChart.includes('Infinity'));
-const pendingSvgDaily=H.svg([{label:'today',values:null,pending:true,flags:32}],true,undefined,true);
-assert(pendingSvgDaily.includes('Μ.Ο.: —'));
-assert(pendingSvgDaily.includes('α: —'));
-assert(!pendingSvgDaily.includes('NaN'));
+assert.equal(unreliableWeek.pct,null,'Incomplete weeks must not create misleading %');
+const sparseStats=H.dailyBarStatistics(unreliable);
+assert(sparseStats.includes('(26/30)'));
+assert(sparseStats.includes('7ήμερο:</strong> —'));
+assert(!sparseStats.includes('NaN')&&!sparseStats.includes('Infinity'));
+const pendingStats=H.dailyBarStatistics([{label:'today',values:null,pending:true,flags:32}]);
+assert(pendingStats.includes('Μ.Ο.:</strong> —'));
+assert(pendingStats.includes('α:</strong> —'));
+assert(!pendingStats.includes('NaN'));
 const signedTrend=H.dailyTrendStats([
   {label:'new',values:[-3,0,0],flags:0,coveredSeconds:86400},
   {label:'old',values:[-1,0,0],flags:0,coveredSeconds:86400}
 ]);
 assert.equal(signedTrend.alpha,-2);
 assert.equal(signedTrend.beta,1);
-assert(H.svg([
+assert(H.dailyBarStatistics([
   {label:'new',values:[-3,0,0],flags:0,coveredSeconds:86400},
   {label:'old',values:[-1,0,0],flags:0,coveredSeconds:86400}
-],false,undefined,true).includes('α: −2'));
-assert(css.includes('.energy-history-plot svg.daily-bars-chart { height:396px; }'));
+]).includes('α:</strong> −2,00'));
+assert(css.includes('.energy-history-plot svg { display:block; width:100%; height:310px; }'));
 
 const negativeMono=H.svg([{label:'negative',values:[-4,0,0],flags:0}],false);
 const negLabel=+negativeMono.match(/class="bar-value"[^>]* y="([^"]+)"/)[1];
