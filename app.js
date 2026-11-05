@@ -3451,7 +3451,7 @@
           EnergyHistory.svg(groups.slice(0,24),dual,groups)+'</section>'+
           '<section class="history-comparison-panel" aria-label="Προηγούμενες 24 ώρες"><h3>Προηγούμενες 24 ώρες</h3>'+
           EnergyHistory.svg(groups.slice(24,48),dual,groups)+'</section></div>'
-      : EnergyHistory.svg(groups,dual) + EnergyHistory.dailyTrendSvg(groups);
+      : EnergyHistory.svg(groups,dual,groups,true) + EnergyHistory.dailyTrendSummary(groups);
     $('energyHistoryPlot').innerHTML=groups.length ? legend+plot : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
     h.groups=groups; h.dual=dual; h.hasRendered=true; h.preservedPlot=false; h.complete=complete; h.loading=!complete;
     h.tableData=null; h.csvRows=null;
