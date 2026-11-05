@@ -1350,17 +1350,10 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
   padding-top:12px;
 }
 .history-comparison-panel h3 { margin:8px 16px 0; color:#263d4b; font-size:.92rem; }
-.energy-trend-panel { margin:20px 0 6px; padding:14px 12px; border-top:2px solid #dbe5ec; background:#f9fbfd; border-radius:10px; }
-.energy-trend-panel h3 { margin:0 4px 10px; color:#263d4b; font-size:1rem; }
-.energy-trend-panel svg { display:block; width:100%; min-width:950px; height:360px; }
-.history-trend-summary { display:flex; flex-wrap:wrap; gap:10px 24px; margin:8px 4px 13px; font-size:.83rem; color:#435969; }
-.history-trend-summary span { overflow-wrap:anywhere; }
-.history-trend-summary strong { color:#203849; font-variant-numeric:tabular-nums; }
-.history-trend-legend { display:flex; flex-wrap:wrap; gap:10px 24px; font-size:.75rem; margin:8px 4px; color:#435969; }
-.history-trend-legend span::before { content:''; display:inline-block; width:22px; border-top:3px solid #1775b8; margin-right:6px; vertical-align:middle; }
-.history-trend-legend .trend-mean-swatch::before { border-top:2px dashed #18875f; }
-.history-trend-legend .trend-fit-swatch::before { border-top:2px dashed #b455ba; }
-.history-trend-note { margin:10px 4px 2px; color:#617484; font-size:.75rem; line-height:1.55; }
+.energy-history-plot svg.daily-bars-chart { height:396px; }
+/* Daily Σ statistics stay in a dedicated top strip inside the SVG, above the bars. */
+.daily-stats-legend-box { pointer-events:none; }
+.daily-stats-legend-alpha, .daily-stats-legend-mean, .daily-stats-legend-week { paint-order:stroke; stroke:#f7fafc; stroke-width:.6px; }
 .history-table-actions { display:flex; gap:10px 18px; flex-wrap:wrap; align-items:center; margin:12px 0; }
 .history-table-actions a { color:#14679d; font-weight:700; font-size:.85rem; text-decoration:underline; text-underline-offset:3px; }
 .history-table-actions a:focus-visible { outline:2px solid #14679d; outline-offset:4px; }
