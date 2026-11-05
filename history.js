@@ -62,6 +62,7 @@ window.EnergyHistory = (() => {
           (row.wh[2] - row.wh[3]) / 1000
         ] : null,
         flags:row?.flags ?? 32,
+        coveredSeconds:row?.covered ?? 0,
         detail:row
           ? `${local(row.first)} έως ${local(row.last)} · ${Math.round(row.covered/60)} λεπτά καταγραφής`
           : 'Δεν υπάρχει καταγραφή'
@@ -263,6 +264,108 @@ window.EnergyHistory = (() => {
     return out + '</svg>';
   }
 
-  return {daily,hourly,svg,local,number,tariffZone};
+
+  function dailyTrendStats(groups) {
+    const points = (Array.isArray(groups) ? groups : []).slice().reverse().map((group, index) => {
+      const values = Array.isArray(group.values) && group.values.length === 3 &&
+        group.values.every(value => Number.isFinite(Number(value)))
+        ? group.values.map(Number) : null;
+      const value = values ? values.reduce((sum, v) => sum + v, 0) : null;
+      const flags = Number(group.flags) || 0;
+      const covered = Number(group.coveredSeconds);
+      return {
+        x: index + 1,
+        label: String(group.label || '—'),
+        value,
+        flags,
+        pending: group.pending === true,
+        // 20h+ recorded, no partial/estimated/reset/current/storage-error flags.
+        eligible: value !== null && !group.pending && (flags & 63) === 0 &&
+          Number.isFinite(covered) && covered >= 20 * 3600
+      };
+    });
+    const fit = points.filter(point => point.eligible);
+    const count = fit.length;
+    if (!count) return {points, count, average: null, alpha: null, beta: null};
+    const average = fit.reduce((sum, p) => sum + p.value, 0) / count;
+    if (count < 2) return {points, count, average, alpha: null, beta: null};
+    const xMean = fit.reduce((sum, p) => sum + p.x, 0) / count;
+    const xx = fit.reduce((sum, p) => sum + (p.x - xMean) ** 2, 0);
+    if (xx <= 0) return {points, count, average, alpha: null, beta: null};
+    const xy = fit.reduce((sum, p) => sum + (p.x - xMean) * (p.value - average), 0);
+    const alpha = xy / xx;
+    const beta = average - alpha * xMean;
+    return {points, count, average, alpha, beta};
+  }
+
+  function dailyTrendSvg(groups) {
+    const {points, count, average, alpha, beta} = dailyTrendStats(groups);
+    const title = '<h3>Καμπύλη ημερήσιου Σ · 30 ημέρες</h3>';
+    const valid = points.filter(p => p.value !== null);
+    if (!valid.length) return `<section class="energy-trend-panel" aria-label="Καμπύλη Σ 30 ημερών">${title}<p class="history-trend-note">Δεν υπάρχουν ακόμη ημερήσια Σ για σχεδίαση.</p></section>`;
+    const trend = alpha !== null && beta !== null;
+    const values = valid.map(p => p.value);
+    if (average !== null) values.push(average);
+    if (trend) values.push(alpha + beta, alpha * points.length + beta);
+    let min = Math.min(...values), max = Math.max(...values);
+    const margin = Math.max((max - min) * 0.13, 0.25);
+    min -= margin;
+    max += margin;
+    const width = 1080, height = 360, left = 76, right = 28, top = 28, bottom = 290;
+    const x = index => left + index * (width - left - right) / Math.max(1, points.length - 1);
+    const y = value => bottom - (value - min) / (max - min) * (bottom - top);
+    const coord = value => Number(value.toFixed(2));
+    const coefficient = new Intl.NumberFormat('el-GR', {minimumFractionDigits:2, maximumFractionDigits:4});
+    const equation = trend
+      ? `y = ${alpha < 0 ? '−' : ''}${coefficient.format(Math.abs(alpha))}x ${beta < 0 ? '−' : '+'} ${coefficient.format(Math.abs(beta))}`
+      : 'Απαιτούνται τουλάχιστον 2 πλήρεις ημέρες';
+    const meanLabel = average !== null ? `${number(average)} kWh/ημέρα` : 'Δεν υπάρχουν πλήρεις ημέρες';
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Καμπύλη ημερήσιου Σ σε kWh, μέσος όρος και ευθεία τάσης" style="min-width:950px">`;
+    for (let i = 0; i <= 4; i++) {
+      const value = min + (max - min) * i / 4;
+      svg += `<line x1="${left}" x2="${width-right}" y1="${coord(y(value))}" y2="${coord(y(value))}" stroke="#dce5eb" stroke-width="1"/>`;
+      svg += `<text x="${left-9}" y="${coord(y(value)+4)}" text-anchor="end" fill="#526576" font-size="12">${xml(number(value))}</text>`;
+    }
+    svg += `<text x="6" y="17" fill="#526576" font-size="12">kWh</text>`;
+    points.forEach((point, index) => {
+      if (index === 0 || index === points.length - 1 || index % 5 === 0) {
+        const px = coord(x(index));
+        svg += `<line x1="${px}" x2="${px}" y1="${top}" y2="${bottom}" stroke="#e7edf1" stroke-dasharray="2 5"/>`;
+        svg += `<text x="${px}" y="${bottom+22}" text-anchor="middle" fill="#526576" font-size="11">${xml(point.label)}</text>`;
+      }
+    });
+    if (average !== null) {
+      const yy = coord(y(average));
+      svg += `<line class="trend-mean-line" x1="${left}" x2="${width-right}" y1="${yy}" y2="${yy}" stroke="#18875f" stroke-width="2" stroke-dasharray="6 5"/>`;
+    }
+    if (trend) {
+      svg += `<line class="trend-fit-line" x1="${coord(x(0))}" y1="${coord(y(alpha + beta))}" x2="${coord(x(points.length-1))}" y2="${coord(y(alpha * points.length + beta))}" stroke="#b455ba" stroke-width="2.5" stroke-dasharray="10 5"/>`;
+    }
+    let path = '', contiguous = false;
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      if (point.value === null) {contiguous = false; continue;}
+      path += `${contiguous ? ' L' : ' M'}${coord(x(i))} ${coord(y(point.value))}`;
+      contiguous = true;
+    }
+    svg += `<path class="trend-sigma-curve" d="${path.trim()}" fill="none" stroke="#1775b8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      if (p.value === null) continue;
+      svg += `<circle class="trend-sigma-point" cx="${coord(x(i))}" cy="${coord(y(p.value))}" r="4.3" fill="${p.eligible ? '#1775b8' : '#fff'}" stroke="#1775b8" stroke-width="2"><title>${xml(p.label)} · Σ ${xml(number(p.value))} kWh${p.eligible ? ' · πλήρης ημέρα' : ' · εκτός υπολογισμού Μ.Ο. / τάσης'}</title></circle>`;
+    }
+    svg += '</svg>';
+    const pending = points.some(p => p.pending);
+    return `<section class="energy-trend-panel" aria-label="Καμπύλη Σ 30 ημερών">${title}` +
+      `<div class="history-trend-summary"><span>Μ.Ο. <strong>${xml(meanLabel)}</strong></span>` +
+      `<span>Τάση <strong>${xml(equation)}</strong></span><span>Πλήρεις ημέρες: <strong>${count}/${points.length}</strong></span></div>` +
+      `<p class="history-trend-legend"><span class="trend-curve-swatch">Ημερήσιο Σ</span><span class="trend-mean-swatch">Μέσος όρος</span><span class="trend-fit-swatch">Γραμμική τάση</span></p>` +
+      svg +
+      `<p class="history-trend-note">x = 1 η παλαιότερη και x = ${points.length} η νεότερη ημέρα. Η κλίση α εκφράζεται σε kWh/ημέρα. ` +
+      `Κενές ημέρες δεν ενώνονται με γραμμή. Κοίλοι κύκλοι: μερική, σημερινή ή εκτιμώμενη καταγραφή — εκτός Μ.Ο. και τάσης. ` +
+      `Ελάχιστη κάλυψη για πλήρη ημέρα: 20 ώρες.${pending ? ' Η λήψη ιστορικού συνεχίζεται.' : ''}</p></section>`;
+  }
+
+  return {daily,hourly,svg,dailyTrendStats,dailyTrendSvg,local,number,tariffZone};
 })();
 
