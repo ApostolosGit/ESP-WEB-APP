@@ -159,7 +159,7 @@ window.EnergyHistory = (() => {
     };
     const prepared = groups.map(prepare);
     const trendStats = withDailyTrend ? dailyTrendStats(groups) : null;
-    const trendAvailable = trendStats && trendStats.alpha !== null && trendStats.beta !== null;
+    const weeklyStats = withDailyTrend ? dailyWeeklyComparison(groups) : null;
 
     let max = 0, min = 0, slot = dual ? 58 : 50;
     for (const group of comparisonGroups.map(prepare)) {
@@ -174,18 +174,6 @@ window.EnergyHistory = (() => {
         min = Math.min(min, group.total);
       }
       slot = Math.max(slot, number(group.total).length * 6.5 + 22);
-    }
-
-    if (trendStats && trendStats.average !== null) {
-      max = Math.max(max, trendStats.average);
-      min = Math.min(min, trendStats.average);
-    }
-    if (trendAvailable) {
-      for (const index of [1, groups.length]) {
-        const projected = trendStats.alpha * index + trendStats.beta;
-        max = Math.max(max, projected);
-        min = Math.min(min, projected);
-      }
     }
 
     // Uniform, rounded ticks keep a small negative extreme from colliding
@@ -210,7 +198,11 @@ window.EnergyHistory = (() => {
     const left = Math.max(55, ...ticks.map(value => tickFormat.format(value).length * 7 + 12));
     const right = 25;
     const width = Math.max(650, groups.length * slot + left + right);
-    const height = 310, top = 28, bottom = 252;
+    // Reserve a dedicated top strip *inside* the 30-day SVG for the stats box.
+    // Hourly charts retain their original 310px geometry and Y axis labels.
+    const height = withDailyTrend ? 396 : 310;
+    const top = withDailyTrend ? 124 : 28;
+    const bottom = withDailyTrend ? 337 : 252;
     const range = max - min || 1;
     const y = value => bottom - (value - min) / range * (bottom - top);
     const zero = y(0);
@@ -239,7 +231,7 @@ window.EnergyHistory = (() => {
         const barTop = value >= 0 ? Math.max(top,zero-minHeight) : zero;
         const heightPx = value >= 0 ? zero-barTop : Math.min(bottom-zero,minHeight);
         out += `<rect x="${center-barWidth/2}" y="${barTop}" width="${barWidth}" height="${heightPx}" fill="${colors[hourZone ?? 0]}" data-hour-zone="${hourZone ?? 0}" opacity="${group.flags?'.55':'1'}"><title>${xml(group.label)} · ${hourZone===null?'Ζ':zoneNames[hourZone]}: ${data.labels[0]} kWh</title></rect>`;
-        const labelY = value >= 0 ? Math.max(12,yy-6) : Math.min(bottom+16,yy+14);
+        const labelY = value >= 0 ? Math.max(withDailyTrend ? top-13 : 12,yy-6) : Math.min(bottom+16,yy+14);
         out += `<text class="bar-value" x="${center}" y="${labelY}" text-anchor="middle" fill="#263d4b" font-size="11" font-weight="600">${data.labels[0]}</text>`;
       } else {
         const barWidth = Math.max(16, Math.min(44, step - 12));
@@ -261,7 +253,7 @@ window.EnergyHistory = (() => {
           if (value > 0) positive = to; else negative = to;
         });
         const labelY = data.total >= 0
-          ? Math.max(12, y(positive) - 6)
+          ? Math.max(withDailyTrend ? top-13 : 12, y(positive) - 6)
           : Math.min(bottom + 18, y(negative) + 14);
         out += `<text class="bar-value" x="${center}" y="${labelY}" text-anchor="middle" fill="#263d4b" font-size="10" font-weight="700">Σ ${number(data.total)}</text>`;
       }
@@ -271,36 +263,26 @@ window.EnergyHistory = (() => {
         ? i % 2 === 0
         : (groups.length <= 30 || i % 4 === 0 || i === groups.length - 1);
       if (showLabel) {
-        out += `<text x="${center}" y="282" text-anchor="middle" fill="${hourZone===null?'#526576':colors[hourZone]}" font-size="10" font-weight="${hourZone===null?'400':'700'}">${xml(group.label)}</text>`;
+        out += `<text x="${center}" y="${bottom+30}" text-anchor="middle" fill="${hourZone===null?'#526576':colors[hourZone]}" font-size="10" font-weight="${hourZone===null?'400':'700'}">${xml(group.label)}</text>`;
       }
     });
 
     if (trendStats) {
-      const center = index => left + index * step + step / 2;
-      const chronological = trendStats.points;
-      if (trendStats.average !== null) {
-        const yy = y(trendStats.average);
-        out += `<line class="trend-mean-line" x1="${left}" x2="${width-right}" y1="${yy}" y2="${yy}" stroke="#18875f" stroke-width="2.3" stroke-dasharray="6 5"/>`;
-      }
-      if (trendAvailable) {
-        const first = trendStats.alpha * chronological.length + trendStats.beta;
-        const last = trendStats.alpha + trendStats.beta;
-        out += `<line class="trend-fit-line" x1="${center(0)}" y1="${y(first)}" x2="${center(groups.length-1)}" y2="${y(last)}" stroke="#b455ba" stroke-width="2.7" stroke-dasharray="10 5"/>`;
-      }
-      let curve = '', connected = false;
-      groups.forEach((group, i) => {
-        const value = prepared[i]?.total;
-        if (!Number.isFinite(value)) { connected = false; return; }
-        curve += `${connected ? ' L' : ' M'}${center(i)} ${y(value)}`;
-        connected = true;
-      });
-      if (curve) out += `<path class="trend-sigma-curve" d="${curve.trim()}" fill="none" stroke="#1775b8" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>`;
-      groups.forEach((group,i) => {
-        const value = prepared[i]?.total;
-        if (!Number.isFinite(value)) return;
-        const p = chronological[chronological.length - 1 - i];
-        out += `<circle class="trend-sigma-point" cx="${center(i)}" cy="${y(value)}" r="4.1" fill="${p.eligible ? '#1775b8' : '#fff'}" stroke="#1775b8" stroke-width="2"><title>${xml(group.label)} · Σ ${xml(number(value))} kWh${p.eligible ? ' · πλήρης ημέρα' : ' · εκτός υπολογισμού Μ.Ο. / τάσης'}</title></circle>`;
-      });
+      // Text-only legend, anchored to the top-left of the plot. Do not draw
+      // any curve, points, mean line, or trend line over the existing bars.
+      const signed = value => `${value >= 0 ? '+' : '−'}${number(Math.abs(value))}`;
+      const meanText = trendStats.average === null ? '—' : `${number(trendStats.average)} kWh/ημέρα`;
+      const slopeText = trendStats.alpha === null ? '—' :
+        `${signed(trendStats.alpha)} kWh/ημέρα ανά ημέρα`;
+      const weeklyText = weeklyStats.pct === null
+        ? '— (χρειάζονται ≥5 πλήρεις ημέρες ανά 7ήμερο)'
+        : `${signed(weeklyStats.pct)}% (${weeklyStats.currentCount}/7, ${weeklyStats.previousCount}/7)`;
+      const boxX = left + 8, textX = boxX + 13;
+      const boxWidth = Math.min(800, width - right - boxX - 6);
+      out += `<rect class="daily-stats-legend-box" x="${boxX}" y="9" width="${boxWidth}" height="94" rx="9" fill="#f7fafc" stroke="#c9d9e4"/>`;
+      out += `<text class="daily-stats-legend-alpha" x="${textX}" y="32" fill="#1f3b52" font-size="15" font-weight="700">α: ${xml(slopeText)}</text>`;
+      out += `<text class="daily-stats-legend-mean" x="${textX}" y="56" fill="#1f3b52" font-size="15" font-weight="700">Μ.Ο.: ${xml(meanText)} (${trendStats.count}/${trendStats.points.length})</text>`;
+      out += `<text class="daily-stats-legend-week" x="${textX}" y="80" fill="#1f3b52" font-size="15" font-weight="700">7ήμερο / προηγούμενο: ${xml(weeklyText)}</text>`;
     }
 
     return out + '</svg>';
@@ -340,25 +322,35 @@ window.EnergyHistory = (() => {
     return {points, count, average, alpha, beta};
   }
 
-  function dailyTrendSummary(groups) {
-    const {points, count, average, alpha, beta} = dailyTrendStats(groups);
-    const fmt = new Intl.NumberFormat('el-GR', {minimumFractionDigits:2,maximumFractionDigits:4});
-    const equation = alpha !== null && beta !== null
-      ? `y = ${alpha < 0 ? '−' : ''}${fmt.format(Math.abs(alpha))}x ${beta < 0 ? '−' : '+'} ${fmt.format(Math.abs(beta))}`
-      : 'Απαιτούνται τουλάχιστον 2 πλήρεις ημέρες';
-    const mean = average !== null ? `${number(average)} kWh/ημέρα` : 'Δεν υπάρχουν πλήρεις ημέρες';
-    return `<section class="energy-trend-panel" aria-label="Σ, μέσος όρος και τάση 30 ημερών">` +
-      `<h3>Ημερήσιο Σ · μπάρες και καμπύλη στο ίδιο γράφημα</h3>` +
-      `<div class="history-trend-summary"><span>Μ.Ο. <strong>${xml(mean)}</strong></span>` +
-      `<span>Τάση <strong>${xml(equation)}</strong></span><span>Πλήρεις ημέρες: <strong>${count}/${points.length}</strong></span></div>` +
-      `<p class="history-trend-legend"><span class="trend-curve-swatch">Καμπύλη ημερήσιου Σ</span>` +
-      `<span class="trend-mean-swatch">Μέσος όρος</span><span class="trend-fit-swatch">Γραμμική τάση</span></p>` +
-      `<p class="history-trend-note">Μπάρες και καμπύλη: ίδια ημερήσια Σ και ίδια κλίμακα kWh. ` +
-      `Στην εξίσωση, x=1 η παλαιότερη ημέρα και x=${points.length} η νεότερη. ` +
-      `Κοίλοι κύκλοι: μερική ή εκτιμώμενη ημέρα, εκτός Μ.Ο. και τάσης. ` +
-      `Ελάχιστη κάλυψη πλήρους ημέρας: 20 ώρες.</p></section>`;
+  // The newest 30-day slot is always today, so exclude it from comparisons.
+  // Two fixed adjacent calendar weeks are compared using averages, not totals:
+  // this remains fair when a week has 5-6 eligible days.
+  function dailyWeeklyComparison(groups) {
+    const newestFirst = (Array.isArray(groups) ? groups : []).slice().reverse();
+    const pointMap = dailyTrendStats(groups).points;
+    const isEligible = index => pointMap[index]?.eligible === true;
+    const period = (start,end) => {
+      const values=[];
+      for(let newestIndex=start;newestIndex<end;newestIndex++) {
+        const chronologicalIndex=newestFirst.length-1-newestIndex;
+        if (isEligible(chronologicalIndex)) values.push(pointMap[chronologicalIndex].value);
+      }
+      return {count:values.length,average:values.length
+        ? values.reduce((sum,value)=>sum+value,0)/values.length : null};
+    };
+    const current=period(1,8), previous=period(8,15);
+    const completeWeeks=newestFirst.length>=15 &&
+      current.count>=5 && previous.count>=5 &&
+      previous.average!==null && Math.abs(previous.average)>=0.01;
+    const pct=completeWeeks ? (current.average-previous.average) /
+      Math.abs(previous.average)*100 : null;
+    return {
+      currentCount:current.count, previousCount:previous.count,
+      currentAverage:current.average, previousAverage:previous.average,
+      pct
+    };
   }
 
-  return {daily,hourly,svg,dailyTrendStats,dailyTrendSummary,local,number,tariffZone};
+  return {daily,hourly,svg,dailyTrendStats,dailyWeeklyComparison,local,number,tariffZone};
 })();
 
