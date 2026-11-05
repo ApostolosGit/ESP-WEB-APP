@@ -207,7 +207,7 @@ window.EnergyHistory = (() => {
     const y = value => bottom - (value - min) / range * (bottom - top);
     const zero = y(0);
     const step = (width - left - right) / Math.max(1, groups.length);
-    let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Ισοζύγιο ενέργειας σε kWh" style="min-width:${width}px">`;
+    let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" class="${withDailyTrend ? 'daily-bars-chart' : 'hourly-bars-chart'}" aria-label="Ισοζύγιο ενέργειας σε kWh" style="min-width:${width}px">`;
 
     for (const value of ticks) {
       out += `<line class="${value===0?'zero-axis':'y-grid'}" x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}" stroke="${value===0?'#526576':'#b9c9d4'}" stroke-width="${value===0?'1.5':'1'}"/><text class="y-tick" x="${left-5}" y="${y(value)+4}" text-anchor="end" fill="#526576" font-size="11">${tickFormat.format(value)}</text>`;
