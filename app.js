@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.92";
+  const APP_VERSION = "5.93";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -3451,7 +3451,7 @@
           EnergyHistory.svg(groups.slice(0,24),dual,groups)+'</section>'+
           '<section class="history-comparison-panel" aria-label="Προηγούμενες 24 ώρες"><h3>Προηγούμενες 24 ώρες</h3>'+
           EnergyHistory.svg(groups.slice(24,48),dual,groups)+'</section></div>'
-      : EnergyHistory.svg(groups,dual,groups,true) + EnergyHistory.dailyTrendSummary(groups);
+      : EnergyHistory.svg(groups,dual,groups,true);
     $('energyHistoryPlot').innerHTML=groups.length ? legend+plot : '<p>Δεν υπάρχουν ακόμη αρκετές μετρήσεις για γράφημα.</p>';
     h.groups=groups; h.dual=dual; h.hasRendered=true; h.preservedPlot=false; h.complete=complete; h.loading=!complete;
     h.tableData=null; h.csvRows=null;
@@ -4345,7 +4345,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.92", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.93", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
