@@ -269,7 +269,7 @@ assert(dailyHtml.includes('<strong>α:</strong>'));
 assert(dailyHtml.includes('<strong>Μ.Ο.:</strong>'));
 assert(dailyHtml.includes('<strong>7ήμερο:</strong>'));
 assert(dailyHtml.indexOf('history-daily-stats') < dailyHtml.indexOf('<svg '),'Stats precede bars without changing SVG');
-const legacyDailySvg=EnergyHistory.svg(context.historySession.groups,true);
+const legacyDailySvg=H.svg(context.historySession.groups,true);
 assert.equal(dailyHtml.slice(dailyHtml.indexOf('<svg ')),legacyDailySvg,
   'The in-app daily SVG is EXACTLY the unchanged legacy SVG');
 for(const layer of ['trend-sigma-curve','trend-mean-line','trend-fit-line','daily-stats-legend-box'])
