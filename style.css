@@ -1490,3 +1490,9 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .vent-dht-measurements > div { padding:10px 12px; border:1px solid var(--line,#8893a55a); border-radius:10px; font-size:.9rem; line-height:1.65; overflow-wrap:anywhere; }
 .vent-operation-line { font-size:.98rem; line-height:1.7; margin:12px 1px; }
 .vent-operation-line b { font-variant-numeric:tabular-nums; }
+
+/* Watchdog summary only — the existing Restart ESP is the acknowledgement. */
+.watchdog-counter-settings { margin: 14px 0; padding: 12px; border: 1px solid #9ab1c2; border-radius: 10px; background: rgba(130,170,195,.08); }
+.watchdog-counter-settings.hidden { display: none !important; }
+.watchdog-counter-value { font-size: 1.5rem; font-variant-numeric: tabular-nums; font-weight: 750; margin: 6px 0; }
+.watchdog-counter-value.wdt-warning { color: #c05c20; }
