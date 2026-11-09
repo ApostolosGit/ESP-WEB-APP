@@ -491,4 +491,48 @@ console.log("Boiler v1.05 4x independent DS18B20, GPIO5/6/7/21 UI and disconnect
 
 console.log("Boiler 3xDS18B20 discovery, read-only UI, blocked controls and history PASS");
 
+// CommonPlatform 1.07 / Ventilation 7.13: read-only watchdog status.
+// The existing Restart ESP command is the ONLY acknowledgement / clear action.
+{
+ const w=buildContext(), id='vent-WDT000000001';
+ assert(html.includes('id="wdtCounterSettings"'));
+ assert(html.includes('id="wdtCounterValue"'));
+ assert(html.includes('id="wdtCounterHint"'));
+ w.message(id,'status','online');
+ const healthy={meter:'VENTILATION',device_type:'VENTILATION',firmware:'7.13',
+   meter_ok:true,read_attempted:true,has_sample:true,rssi:-57,
+   wdt_restarts:9,wdt_limit:10,wdt_stored:true};
+ w.message(id,'health',healthy);
+ w.message(id,'state',{meter:'VENTILATION',device_type:'VENTILATION',firmware:'7.13',
+   sensors_ok:true,mode:'auto',speed:'low',season:'winter',fan_on:false});
+ w.app.selectOtaDevice(id);w.app.updateAdminButtons();
+ assert(!w.nodes.get('wdtCounterSettings').classList.contains('hidden'),
+   'The watchdog statistics are visible for Ventilation v7.13');
+ assert.equal(w.nodes.get('wdtCounterValue').textContent,'9 / 10');
+ assert(w.nodes.get('wdtCounterHint').textContent.includes('Restart ESP'));
+ w.message(id,'health',{...healthy,wdt_restarts:10});
+ assert.equal(w.nodes.get('wdtCounterValue').textContent,'9 / 10',
+   'Health refresh remains idle when admin dialog is closed');
+ w.app.updateAdminButtons();
+ assert.equal(w.nodes.get('wdtCounterValue').textContent,'10 / 10');
+ assert(w.nodes.get('wdtCounterValue').classList.contains('wdt-warning'));
+ w.message(id,'health',{...healthy,wdt_restarts:0});
+ w.app.updateAdminButtons();
+ assert.equal(w.nodes.get('wdtCounterValue').textContent,'0 / 10');
+ assert(!w.nodes.get('wdtCounterValue').classList.contains('wdt-warning'));
+ w.message(id,'health',{...healthy,wdt_restarts:1,wdt_stored:false});
+ w.app.updateAdminButtons();
+ assert(w.nodes.get('wdtCounterHint').textContent.includes('πρόβλημα αποθήκευσης'));
+ const restartBtn=w.nodes.get('restartEspBtn');
+ assert(!restartBtn.disabled);
+ restartBtn.handlers.get('click')();
+ assert(w.published.some(p=>p.payload==='restart_esp'),
+   'The existing manual restart command clears the firmware counter; no separate MQTT clear');
+ w.message(id,'state',{...w.app.devices.get(id).state,firmware:'7.12'});
+ w.app.updateAdminButtons();
+ assert(w.nodes.get('wdtCounterSettings').classList.contains('hidden'),
+   'Older Ventilation versions do not claim watchdog counter capability');
+}
+console.log('Ventilation v7.13 watchdog counter health, warning, storage-error and manual restart UI PASS');
+
 console.log("Ventilation v1.03 discovery, dashboard, command safety, OTA isolation, 96-slot MQTT history PASS");
