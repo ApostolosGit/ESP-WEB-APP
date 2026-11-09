@@ -1,4 +1,4 @@
-const CACHE_NAME = "energy-dds-jsy-pwa-v5.96-r1";
+const CACHE_NAME = "energy-dds-jsy-pwa-v5.97-r1";
 const CACHE_PREFIX = "energy-dds-jsy-pwa-";
 const APP_SCOPE = new URL("./", self.location.href).href;
 const APP_SHELL = [
