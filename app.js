@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.96";
+  const APP_VERSION = "5.97";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -49,6 +49,11 @@
   const ventilationOtaAvailable = new Map();
   const boilerOtaAvailable = new Map();
   const BOILER_OTA_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP32-OTA.bin/main/";
+  const DISPLAY28_OTA_BASE = BOILER_OTA_BASE_URL;
+  const DISPLAY28_PROFILE = "esp32-display28-st7789";
+  let display28Manifest = null;
+  let display28ManifestError = "", display28Checking = false;
+  let display28LastCheck = 0, display28PendingAction = null;
   let otaAwaitingStart = null;
   let otaSession = null;
   let otaAckTimer = null;
@@ -324,6 +329,10 @@
 
   function meterType(device) {
     const s = device.state || {};
+    if (String(device.id || "").toLowerCase().startsWith("display28-") ||
+      String(s.device_type || s.meter || device.health?.device_type ||
+             device.health?.meter || "").toUpperCase() === "DISPLAY28")
+      return "DISPLAY28";
     const declared = String(s.device_type || s.meter || device.health?.device_type || device.health?.meter || "").toUpperCase();
     if (declared.includes("BOILER") || device.id.toLowerCase().startsWith("boiler-")) return "BOILER";
     if (declared.includes("VENTILATION") || device.id.toLowerCase().startsWith("vent-")) return "VENTILATION";
@@ -335,6 +344,9 @@
     return "DDS";
   }
 
+  function isDisplay28Device(device) {
+    return Boolean(device && meterType(device) === "DISPLAY28");
+  }
   function isTemperatureDevice(device) {
     return ["VENTILATION","BOILER"].includes(meterType(device));
   }
@@ -744,7 +756,7 @@
 
   function renderAll() {
     const online = [...devices.values()]
-      .filter((d) => d.online)
+      .filter((d) => d.online && !isDisplay28Device(d))
       .sort((a, b) => a.id.localeCompare(b.id));
 
     // Never show "no device" while the broker is disconnected or MQTT
@@ -774,6 +786,7 @@
     ui.metersStatus.textContent = String(online.length);
     setDot(ui.metersDot, online.length ? "good" : "muted");
     ui.updateAllBtn.disabled = !(client && client.connected) || online.length === 0;
+    renderDisplay28Manager();
   }
 
   function topicFor(id, suffix) {
