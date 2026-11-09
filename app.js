@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.95";
+  const APP_VERSION = "5.96";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -2750,12 +2750,14 @@
     ui.wdtCounterValue.textContent = valid ? `${count} / ${limit}` : "Αναμονή MQTT health…";
     ui.wdtCounterValue.classList.toggle("wdt-warning", valid && count >= limit);
     ui.wdtCounterHint.textContent = !valid
-      ? "Δεν έχει ληφθεί ακόμη επιβεβαιωμένη ένδειξη από τη συσκευή."
+      ? "· Αναμονή MQTT health"
       : health.wdt_stored === false
-        ? "Προσοχή: πρόβλημα αποθήκευσης μετρητή. Ο αριθμός ίσως δεν διατηρηθεί."
+        ? "· Προσοχή: πρόβλημα αποθήκευσης"
         : count >= limit
-          ? "Επόμενο watchdog reset: Recovery. Ένα χειροκίνητο Restart ESP μηδενίζει τον μετρητή."
-          : "Ο μετρητής αυξάνεται μόνο με watchdog. Το χειροκίνητο Restart ESP τον μηδενίζει.";
+          ? "· Επόμενο watchdog → Recovery"
+          : "· Μηδενίζεται με Restart ESP";
+    ui.wdtCounterHint.classList.toggle("wdt-warning",
+      valid && (count >= limit || health.wdt_stored === false));
   }
 
   function updateAdminButtons() {
@@ -4373,7 +4375,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.95", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.96", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
