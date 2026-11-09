@@ -3129,6 +3129,8 @@
       return;
     }
 
+    if(handleDisplay28Response(id,data))return;
+
     const errorMessages = {
       invalid_reading: "Τα στοιχεία της μέτρησης ΔΕΗ δεν είναι έγκυρα.",
       invalid_reading_id: "Η εγγραφή ΔΕΗ δεν είναι έγκυρη.",
@@ -4227,6 +4229,14 @@
       }
     });
   }
+
+  $("display28ProbeBtn").addEventListener("click",()=>{
+    const d=display28Device();
+    if(d?.online)requestUpdate(d.id,true);
+  });
+  $("display28CheckBtn").addEventListener("click",()=>{void checkDisplay28Ota();});
+  $("display28OtaBtn").addEventListener("click",display28StartOta);
+  $("display28RestartBtn").addEventListener("click",display28Restart);
 
   ui.devicesGrid.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-device]");
