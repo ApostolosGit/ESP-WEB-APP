@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.94";
+  const APP_VERSION = "5.95";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -134,6 +134,9 @@
     otaUpdateBtn: $("otaUpdateBtn"),
     otaCh1116TestBtn: $("otaCh1116TestBtn"),
     restartEspBtn: $("restartEspBtn"),
+    wdtCounterSettings: $("wdtCounterSettings"),
+    wdtCounterValue: $("wdtCounterValue"),
+    wdtCounterHint: $("wdtCounterHint"),
     otaPinDialog: $("otaPinDialog"),
     otaPinForm: $("otaPinForm"),
     otaPinInput: $("otaPinInput"),
@@ -2732,6 +2735,29 @@
     if (kind) ui.adminStatus.classList.add(`is-${kind}`);
   }
 
+  function updateWatchdogCounter(device) {
+    const node = ui.wdtCounterSettings;
+    if (!node) return;
+    const active = device && meterType(device) === "VENTILATION" &&
+      firmwareAtLeast(device.state?.firmware || device.health?.firmware, 7, 13);
+    node.classList.toggle("hidden", !active);
+    if (!active) return;
+    const health = device.health;
+    const count = health?.wdt_restarts;
+    const limit = health?.wdt_limit;
+    const valid = Number.isSafeInteger(count) && count >= 0 &&
+      Number.isSafeInteger(limit) && limit >= 1;
+    ui.wdtCounterValue.textContent = valid ? `${count} / ${limit}` : "Αναμονή MQTT health…";
+    ui.wdtCounterValue.classList.toggle("wdt-warning", valid && count >= limit);
+    ui.wdtCounterHint.textContent = !valid
+      ? "Δεν έχει ληφθεί ακόμη επιβεβαιωμένη ένδειξη από τη συσκευή."
+      : health.wdt_stored === false
+        ? "Προσοχή: πρόβλημα αποθήκευσης μετρητή. Ο αριθμός ίσως δεν διατηρηθεί."
+        : count >= limit
+          ? "Επόμενο watchdog reset: Recovery. Ένα χειροκίνητο Restart ESP μηδενίζει τον μετρητή."
+          : "Ο μετρητής αυξάνεται μόνο με watchdog. Το χειροκίνητο Restart ESP τον μηδενίζει.";
+  }
+
   function updateAdminButtons() {
     const busy = adminTargetId && adminBusy.has(adminTargetId);
     const connected = Boolean(client && client.connected);
@@ -2808,6 +2834,7 @@
         : "Απαιτεί firmware v4.03+";
     }
     if (device && meterType(device) === "VENTILATION") refreshVentControls(device);
+    updateWatchdogCounter(device);
   }
 
   function readUtilityForm() {
@@ -3673,6 +3700,7 @@
       } else if (!device.sampleReceived) queueDeviceProbe(device);
     }
     renderAll();
+    if (adminTargetId === device.id && ui.adminDialog.open) updateWatchdogCounter(device);
     return true;
   }
 
@@ -4345,7 +4373,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.94", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.95", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
