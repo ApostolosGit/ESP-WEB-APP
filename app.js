@@ -19,7 +19,7 @@
     path: "/mqtt"
   };
 
-  const APP_VERSION = "5.97";
+  const APP_VERSION = "5.98";
   const AUTO_REFRESH_MS = 60000;
   const EMPTY_DEVICE_DELAY_MS = 8000; // Allow MQTT discovery before showing the empty-state warning.
   const UPDATE_RESPONSE_MS = 10000;
@@ -863,6 +863,7 @@
     $("display28CheckBtn").disabled=display28Checking;
     $("display28RestartBtn").disabled=!live||busy||!display28ProfileOk(d);
     $("display28OtaBtn").disabled=busy||!display28Available(d);
+    $("display28LocalOtaBtn").disabled=busy||!display28LocalOtaAddress(d);
     if(display28PendingAction?.type==="ota" && live &&
        display28Version(fw)>=display28Version(display28PendingAction.version)) {
       display28PendingAction=null;
@@ -889,14 +890,39 @@
       display28Checking=false;renderDisplay28Manager();
     }
   }
+  function display28LocalOtaAddress(device) {
+    const ip=String(device?.state?.sta_ip||device?.health?.sta_ip||"").trim();
+    if(!/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ip))return "";
+    const octets=ip.split(".").map(Number);
+    if(octets.some(x=>x<0||x>255))return "";
+    // Do not navigate users to arbitrary MQTT-provided public hosts.
+    const privateIp=octets[0]===10 ||
+      (octets[0]===172&&octets[1]>=16&&octets[1]<=31) ||
+      (octets[0]===192&&octets[1]===168);
+    return privateIp?"http://"+ip+"/ota":"";
+  }
+  function display28OpenLocalOta() {
+    const url=display28LocalOtaAddress(display28Device());
+    if(!url) {
+      display28SetAction("Δεν εντοπίστηκε έγκυρη τοπική IP οθόνης.","error");
+      return;
+    }
+    // The browser navigates to the device's own PIN-protected local uploader.
+    // Local upload works even when the old firmware's outbound TLS is broken.
+    window.open(url,"_blank","noopener,noreferrer");
+    display28SetAction("Άνοιξε η τοπική σελίδα OTA. Συνδέσου με το PIN της συσκευής.");
+  }
   function display28ReadPin() {
-    const code=window.prompt("CommonPlatform PIN της οθόνης (5 ψηφία):","");
+    const code=window.prompt("PIN συσκευής:","");
     if(code===null)return null;
-    if(code.trim()!==OTA_PIN) {
-      display28SetAction("Λάθος PIN. Δεν στάλθηκε εντολή.","error");
+    const pin=code.trim();
+    // Never disclose PIN length or compare a hard-coded PIN in public app JS.
+    // The device firmware alone validates the PIN and limits failed attempts.
+    if(!pin || pin.includes("|") || /[\r\n]/.test(pin)) {
+      display28SetAction("Πληκτρολόγησε έγκυρο PIN.","error");
       return null;
     }
-    return code.trim();
+    return pin;
   }
   function display28Restart() {
     const d=display28Device();
@@ -923,7 +949,7 @@
     const d=display28Device(),m=display28Manifest;
     if(!display28Available(d)||!m||display28PendingAction)return;
     const message="OTA Display2.8 "+display28Firmware(d)+" → "+m.version+"\n"+
-      "Αρχείο: "+m.file+"\nΠηγή: ESP32-OTA.bin\n"+
+      "Αρχείο: "+m.file+"\n"+
       "Η συσκευή θα κάνει HTTPS download και έλεγχο MD5. Συνέχεια;";
     if(!window.confirm(message))return;
     const pin=display28ReadPin();if(!pin)return;
@@ -4236,6 +4262,7 @@
   });
   $("display28CheckBtn").addEventListener("click",()=>{void checkDisplay28Ota();});
   $("display28OtaBtn").addEventListener("click",display28StartOta);
+  $("display28LocalOtaBtn").addEventListener("click",display28OpenLocalOta);
   $("display28RestartBtn").addEventListener("click",display28Restart);
 
   ui.devicesGrid.addEventListener("click", (event) => {
@@ -4577,7 +4604,7 @@
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js?v=5.97", { updateViaCache: "none" })
+      navigator.serviceWorker.register("./sw.js?v=5.98", { updateViaCache: "none" })
         .then((registration) => {
           const checkForAppUpdate = () => {
             registration.update().catch((err) => {
