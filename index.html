@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.97">
+  <link rel="stylesheet" href="style.css?v=5.98">
 </head>
 <body>
   <div class="app-shell">
@@ -71,6 +71,7 @@
           <button id="display28ProbeBtn" type="button">↻ Ανανέωση</button>
           <button id="display28CheckBtn" type="button">Έλεγχος OTA</button>
           <button id="display28OtaBtn" type="button" disabled>⬆ OTA update</button>
+          <button id="display28LocalOtaBtn" type="button" disabled>Τοπικό OTA</button>
           <button id="display28RestartBtn" type="button" disabled>⟳ Restart ESP32</button>
         </div>
         <p id="display28ActionStatus" class="display28-action-status" role="status" aria-live="polite">Οι λειτουργίες OTA/Restart ενεργοποιούνται μόνο όταν η οθόνη είναι online και έχει αναγνωριστεί το ακριβές προφίλ.</p>
@@ -78,7 +79,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.97</span>
+      <span>MQTT.app. v5.98</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -356,7 +357,7 @@
 
       <label>
         PIN
-        <input id="otaPinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off" required placeholder="•••••">
+        <input id="otaPinInput" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required placeholder="PIN">
       </label>
 
       <p id="otaPinTarget" class="privacy-note"></p>
@@ -425,8 +426,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.97"></script>
-  <script src="app.js?v=5.97"></script>
+  <script src="history.js?v=5.98"></script>
+  <script src="app.js?v=5.98"></script>
 </body>
 </html>
 
