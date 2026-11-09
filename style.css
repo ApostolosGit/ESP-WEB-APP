@@ -1491,8 +1491,20 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .vent-operation-line { font-size:.98rem; line-height:1.7; margin:12px 1px; }
 .vent-operation-line b { font-variant-numeric:tabular-nums; }
 
-/* Watchdog summary only — the existing Restart ESP is the acknowledgement. */
-.watchdog-counter-settings { margin: 14px 0; padding: 12px; border: 1px solid #9ab1c2; border-radius: 10px; background: rgba(130,170,195,.08); }
-.watchdog-counter-settings.hidden { display: none !important; }
-.watchdog-counter-value { font-size: 1.5rem; font-variant-numeric: tabular-nums; font-weight: 750; margin: 6px 0; }
-.watchdog-counter-value.wdt-warning { color: #c05c20; }
+/* Compact, informational watchdog reading within the existing Restart ESP section.
+   Never add a separate settings card or change the restart action. */
+.restart-watchdog-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 6px;
+  margin: 7px 2px 3px;
+  color: var(--muted, #617485);
+  font-size: .77rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.restart-watchdog-note.hidden { display: none !important; }
+.restart-watchdog-value { color: inherit; font-size: inherit; font-weight: 650; font-variant-numeric: tabular-nums; }
+.restart-watchdog-value.wdt-warning, .restart-watchdog-hint.wdt-warning { color: #b45309; }
+.restart-watchdog-hint { color: inherit; }
