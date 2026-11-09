@@ -27,6 +27,7 @@
   const OTA_ACK_TIMEOUT_MS = 12000;
   const OTA_POLL_MS = 5000;
   const OTA_TOTAL_TIMEOUT_MS = 180000;
+  const OTA_PIN = "12134"; // Legacy device OTA UI; Display28 validates PIN in firmware.
   const OTA_MANIFEST_BASE_URL = "https://raw.githubusercontent.com/ApostolosGit/ESP8266-OTA.bin/main/";
   const devices = new Map();
   const csvBuffers = new Map();
@@ -4390,14 +4391,15 @@
     event.preventDefault();
     const entered = ui.otaPinInput.value.trim();
 
-    if (!entered || entered.includes("|") || /[\r\n]/.test(entered)) {
-      ui.otaPinError.textContent = "Συμπλήρωσε έγκυρο PIN.";
+    // Legacy v5.58/v5.59 devices require the existing client-side PIN gate:
+    // those older wire commands do not include PIN authentication.
+    // Display28 uses its separate device-verified PIN workflow.
+    if (entered !== OTA_PIN) {
+      ui.otaPinError.textContent = "Λάθος PIN.";
       ui.otaPinError.classList.remove("hidden");
       ui.otaPinInput.select();
       return;
     }
-    // Never ship or verify a secret PIN in public JavaScript.
-    // The destination's firmware validates the PIN from the MQTT command.
 
     ui.otaPinDialog.close();
     sendPendingRemoteOta();
