@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5.95">
+  <link rel="stylesheet" href="style.css?v=5.96">
 </head>
 <body>
   <div class="app-shell">
@@ -58,7 +58,7 @@
     </main>
 
     <footer>
-      <span>MQTT.app. v5.95</span>
+      <span>MQTT.app. v5.96</span>
       <span>Auto discovery · MQTT wildcard · refresh 60″</span>
     </footer>
   </div>
@@ -190,14 +190,14 @@
         <button id="otaUpdateBtn" class="primary-btn admin-btn full-btn" type="button" disabled>OTA-UPDATE</button>
         <button id="otaCh1116TestBtn" class="secondary-btn admin-btn full-btn hidden" type="button" disabled title="CH1116 OLED 1,54″ (δοκιμαστική έκδοση) — απαιτεί φυσικό CH1116 και δυνατότητα USB recovery">ΔΟΚΙΜΗ OLED CH1116 · v4.02</button>
         <p class="admin-help">Η αναβάθμιση γίνεται από Internet μέσω MQTT + HTTPS. Ο ESP θα αποσυνδεθεί προσωρινά και θα επανεκκινήσει όταν ολοκληρωθεί.</p>
-        <div id="wdtCounterSettings" class="settings-section watchdog-counter-settings hidden" aria-live="polite">
-          <h3>Επανεκκινήσεις Watchdog</h3>
-          <p class="watchdog-counter-value" id="wdtCounterValue">Αναμονή…</p>
-          <p id="wdtCounterHint" class="admin-help">Ο μετρητής μηδενίζεται με το χειροκίνητο Restart ESP.</p>
-        </div>
         <div class="restart-settings"><div class="settings-divider"></div>
         <h3>Restart ESP</h3>
         <button id="restartEspBtn" class="danger-outline-btn admin-btn full-btn" type="button">RESTART ESP</button>
+        <p id="wdtCounterSettings" class="restart-watchdog-note hidden" aria-live="polite">
+          <span class="restart-watchdog-label">Watchdog</span>
+          <strong id="wdtCounterValue" class="restart-watchdog-value">…</strong>
+          <span id="wdtCounterHint" class="restart-watchdog-hint">· Μηδενίζεται με Restart ESP</span>
+        </p>
         <p class="admin-help">Κάνει κανονική επανεκκίνηση του ESP8266 μετά από επιβεβαίωση. Απαιτεί firmware v4.03+.</p></div>
       </section>
 
@@ -405,8 +405,8 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-  <script src="history.js?v=5.95"></script>
-  <script src="app.js?v=5.95"></script>
+  <script src="history.js?v=5.96"></script>
+  <script src="app.js?v=5.96"></script>
 </body>
 </html>
 
