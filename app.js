@@ -868,7 +868,7 @@
       display28PendingAction=null;
       display28SetAction("Η συσκευή επιβεβαίωσε firmware "+fw+".","ok");
     }
-    if(!display28LastCheck&&!display28Checking)void checkDisplay28Ota();
+    if(d && !display28LastCheck&&!display28Checking)void checkDisplay28Ota();
   }
   async function checkDisplay28Ota() {
     if(display28Checking)return;
