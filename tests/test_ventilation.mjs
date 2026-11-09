@@ -498,6 +498,20 @@ console.log("Boiler 3xDS18B20 discovery, read-only UI, blocked controls and hist
  assert(html.includes('id="wdtCounterSettings"'));
  assert(html.includes('id="wdtCounterValue"'));
  assert(html.includes('id="wdtCounterHint"'));
+ const restartSection=html.slice(html.indexOf('<div class="restart-settings">'));
+ const restartEnd=restartSection.indexOf('</section>');
+ assert(restartSection.indexOf('id="restartEspBtn"') >= 0);
+ assert(restartSection.indexOf('id="wdtCounterSettings"') >
+        restartSection.indexOf('id="restartEspBtn"'),
+   'Watchdog count belongs below the existing RESTART ESP button');
+ assert(restartSection.indexOf('id="wdtCounterSettings"') < restartEnd,
+   'Watchdog count must remain inside Restart ESP section');
+ assert(!html.includes('watchdog-counter-settings'),
+   'No standalone watchdog settings card');
+ const style=fs.readFileSync(new URL('../style.css',import.meta.url),'utf8');
+ assert(style.includes('.restart-watchdog-note'));
+ assert(!style.includes('.watchdog-counter-value { font-size: 1.5rem'),
+   'Watchdog must use subtle small text instead of oversized count');
  w.message(id,'status','online');
  const healthy={meter:'VENTILATION',device_type:'VENTILATION',firmware:'7.13',
    meter_ok:true,read_attempted:true,has_sample:true,rssi:-57,
