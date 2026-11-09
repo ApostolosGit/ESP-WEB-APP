@@ -789,6 +789,185 @@
     renderDisplay28Manager();
   }
 
+  // Display2.8 manager: deliberately NOT treated as a fifth energy meter.
+  function display28Device() {
+    const found=[...devices.values()].filter(isDisplay28Device);
+    return found.find(d=>d.online && d.statusOnline!==false) || found[0] || null;
+  }
+  function display28Version(value) {
+    const m=String(value||"").match(/^(?:ver)?0\.(\d{1,3})$/i);
+    return m?Number(m[1]):-1;
+  }
+  function display28Firmware(device) {
+    return String(device?.state?.firmware||device?.health?.firmware||"");
+  }
+  function display28ProfileOk(device) {
+    if(!device)return false;
+    const s=device.state||{},h=device.health||{};
+    const p=s.profile?s:h;
+    return String(p.profile||"")===DISPLAY28_PROFILE &&
+      String(p.application||"").toLowerCase()==="display28" &&
+      String(p.driver||"").toUpperCase()==="ST7789-XPT2046" &&
+      Number(p.ota_protocol)===2;
+  }
+  function display28ManifestOk(m) {
+    return Boolean(m && m.meter==="DISPLAY28" &&
+      m.application==="display28" && m.profile===DISPLAY28_PROFILE &&
+      m.driver==="ST7789-XPT2046" && m.ota_protocol===2 &&
+      /^Display2\.8-ver0\.\d{1,3}-app-only\.bin$/.test(m.file) &&
+      m.file==="Display2.8-"+m.version+"-app-only.bin" &&
+      display28Version(m.version)>=7 && m.size>=100000 && m.size<=1500000);
+  }
+  function display28Available(d) {
+    return Boolean(client?.connected && d?.online && d.statusOnline!==false &&
+      display28ProfileOk(d) && display28ManifestOk(display28Manifest) &&
+      display28Version(display28Manifest.version)>display28Version(display28Firmware(d)));
+  }
+  function display28SetAction(text,kind="") {
+    const el=$("display28ActionStatus");if(!el)return;
+    el.textContent=text;
+    el.classList.toggle("is-error",kind==="error");
+    el.classList.toggle("is-ok",kind==="ok");
+  }
+  function renderDisplay28Manager() {
+    if(!$("display28Panel"))return;
+    const d=display28Device(),live=Boolean(client?.connected && d?.online && d.statusOnline!==false);
+    const indicator=$("display28LinkStatus");
+    indicator.textContent=live?"ONLINE":d?"OFFLINE":"Αναμονή συσκευής";
+    indicator.classList.toggle("is-live",live);
+    indicator.classList.toggle("is-offline",!live);
+    const fw=display28Firmware(d);
+    if(d) {
+      const rssi=Number(d.state?.rssi??d.health?.rssi);
+      const tx=Number(d.state?.tx_dbm_tenths??d.health?.tx_dbm_tenths);
+      const ip=String(d.state?.sta_ip||d.health?.sta_ip||"—");
+      $("display28Details").textContent="ID: "+d.id+" · Firmware: "+(fw||"—")+" · IP: "+ip+
+        " · RSSI: "+(Number.isFinite(rssi)&&rssi>-127?rssi+" dBm":"—")+
+        " · TX: "+(Number.isFinite(tx)&&tx>0?(tx/10).toFixed(1)+" dBm":"—")+
+        " · "+(display28ProfileOk(d)?"CommonPlatform profile OK":"αναμονή προφίλ");
+    } else {
+      $("display28Details").textContent=
+        "Η οθόνη εντοπίζεται αυτόματα όταν τρέχει ver0.07+ στο ίδιο HiveMQ Cloud.";
+    }
+    const info=$("display28FirmwareInfo");
+    if(display28Checking)info.textContent="Έλεγχος firmware στον ESP32 OTA server…";
+    else if(display28ManifestError)info.textContent="OTA server: "+display28ManifestError;
+    else if(display28ManifestOk(display28Manifest)) {
+      const m=display28Manifest;
+      info.textContent="Δημοσιευμένη έκδοση: "+m.version+" · "+m.file+
+        " ("+m.size+" bytes)"+(fw?(display28Version(m.version)>display28Version(fw)?
+        " · NEW AVAILABLE":" · Δεν υπάρχει νεότερη έκδοση"):"");
+    } else info.textContent="Δεν υπάρχει ακόμη εγκεκριμένο Display2.8 app-only firmware.";
+    const busy=Boolean(display28PendingAction);
+    $("display28ProbeBtn").disabled=!live||busy;
+    $("display28CheckBtn").disabled=display28Checking;
+    $("display28RestartBtn").disabled=!live||busy||!display28ProfileOk(d);
+    $("display28OtaBtn").disabled=busy||!display28Available(d);
+    if(display28PendingAction?.type==="ota" && live &&
+       display28Version(fw)>=display28Version(display28PendingAction.version)) {
+      display28PendingAction=null;
+      display28SetAction("Η συσκευή επιβεβαίωσε firmware "+fw+".","ok");
+    }
+    if(!display28LastCheck&&!display28Checking)void checkDisplay28Ota();
+  }
+  async function checkDisplay28Ota() {
+    if(display28Checking)return;
+    display28LastCheck=Date.now();display28Checking=true;
+    display28ManifestError="";
+    renderDisplay28Manager();
+    try {
+      const response=await fetch(DISPLAY28_OTA_BASE+"manifest-display28.txt?cb="+Date.now(),{cache:"no-store"});
+      if(!response.ok)throw new Error("Manifest HTTP "+response.status);
+      const manifest=parseOtaManifest(await response.text());
+      if(!display28ManifestOk(manifest))
+        throw new Error("Ασυμβίβαστο firmware manifest για ESP32 Display2.8.");
+      display28Manifest=manifest;
+    } catch(error) {
+      display28Manifest=null;
+      display28ManifestError=String(error?.message||error);
+    } finally {
+      display28Checking=false;renderDisplay28Manager();
+    }
+  }
+  function display28ReadPin() {
+    const code=window.prompt("CommonPlatform PIN της οθόνης (5 ψηφία):","");
+    if(code===null)return null;
+    if(code.trim()!==OTA_PIN) {
+      display28SetAction("Λάθος PIN. Δεν στάλθηκε εντολή.","error");
+      return null;
+    }
+    return code.trim();
+  }
+  function display28Restart() {
+    const d=display28Device();
+    if(!client?.connected||!d?.online||!display28ProfileOk(d)||display28PendingAction)return;
+    if(!window.confirm("Restart ESP32 Display2.8 "+d.id+";\n\nΘα διακοπούν προσωρινά οι ενδείξεις. Συνέχεια;"))return;
+    const pin=display28ReadPin();if(!pin)return;
+    display28PendingAction={type:"restart",id:d.id,at:Date.now()};
+    display28SetAction("Αποστολή Restart μέσω HiveMQ…");
+    publish(d.id,"admin/request","restart_esp|"+pin,(err)=>{
+      if(err){display28PendingAction=null;display28SetAction("MQTT: "+String(err),"error");}
+      renderDisplay28Manager();
+    });
+    setTimeout(()=>{
+      if(display28PendingAction?.type==="restart"&&
+         Date.now()-display28PendingAction.at>=12000) {
+        display28PendingAction=null;
+        display28SetAction("Δεν ελήφθη ACK του Restart από το ESP32.","error");
+        renderDisplay28Manager();
+      }
+    },12500);
+    renderDisplay28Manager();
+  }
+  function display28StartOta() {
+    const d=display28Device(),m=display28Manifest;
+    if(!display28Available(d)||!m||display28PendingAction)return;
+    const message="OTA Display2.8 "+display28Firmware(d)+" → "+m.version+"\n"+
+      "Αρχείο: "+m.file+"\nΠηγή: ESP32-OTA.bin\n"+
+      "Η συσκευή θα κάνει HTTPS download και έλεγχο MD5. Συνέχεια;";
+    if(!window.confirm(message))return;
+    const pin=display28ReadPin();if(!pin)return;
+    if(!display28Available(d)) {
+      display28SetAction("Άλλαξε η κατάσταση της συσκευής.","error");return;
+    }
+    const url=DISPLAY28_OTA_BASE+encodeURIComponent(m.file);
+    const command=["ota_https_v2",m.size,m.md5,url,m.profile,pin].join("|");
+    display28PendingAction={type:"ota",id:d.id,version:m.version,at:Date.now()};
+    display28SetAction("OTA ζητήθηκε· αναμονή ACK της οθόνης.");
+    publish(d.id,"admin/request",command,(err)=>{
+      if(err){display28PendingAction=null;display28SetAction("MQTT publish: "+String(err),"error");}
+      renderDisplay28Manager();
+    });
+    setTimeout(()=>{
+      if(display28PendingAction?.type==="ota"&&
+         Date.now()-display28PendingAction.at>300000) {
+        display28PendingAction=null;
+        display28SetAction("OTA timeout. Έλεγξε το ESP32 πριν ξαναδοκιμάσεις.","error");
+        renderDisplay28Manager();
+      }
+    },301000);
+    renderDisplay28Manager();
+  }
+  function handleDisplay28Response(id,data) {
+    if(!isDisplay28Device(devices.get(id)))return false;
+    if(!display28PendingAction||display28PendingAction.id!==id)return true;
+    if(data.ok===false) {
+      display28PendingAction=null;
+      display28SetAction("Το ESP32 απέρριψε την εντολή: "+String(data.state||"error"),"error");
+    } else if(data.cmd==="restart_esp" && data.state==="restarting") {
+      display28PendingAction=null;
+      display28SetAction("Το ESP32 επιβεβαίωσε Restart.","ok");
+    } else if(data.cmd==="ota_https_v2") {
+      const progress=Number(data.progress);
+      if(data.state==="rebooting")
+        display28SetAction("OTA 100%· γίνεται επανεκκίνηση. Αναμονή νέου firmware…","ok");
+      else display28SetAction("OTA: "+String(data.state||"starting")+
+        (Number.isFinite(progress)?" · "+progress+"%":""));
+    }
+    renderDisplay28Manager();
+    return true;
+  }
+
   function topicFor(id, suffix) {
     return `${BASE}/${id}/${suffix}`;
   }
