@@ -1508,3 +1508,34 @@ input:focus { border-color: #2b9c88; box-shadow: 0 0 0 3px rgba(43,156,136,.13);
 .restart-watchdog-value { color: inherit; font-size: inherit; font-weight: 650; font-variant-numeric: tabular-nums; }
 .restart-watchdog-value.wdt-warning, .restart-watchdog-hint.wdt-warning { color: #b45309; }
 .restart-watchdog-hint { color: inherit; }
+
+/* Display2.8: small standalone manager, always the last application card. */
+.display28-widget {
+  margin-top: 20px;
+  padding: clamp(15px,3vw,23px);
+  background: var(--surface);
+  border: 1px solid rgba(94,167,255,.26);
+  border-radius: 17px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+.display28-heading {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.display28-heading h2 {font-size:clamp(17px,2.2vw,21px);margin:4px 0 0}
+.display28-status {border-radius:24px;border:1px solid var(--line);padding:7px 11px;font-size:13px;color:var(--muted)}
+.display28-status.is-live {color:var(--good);border-color:rgba(81,216,138,.4)}
+.display28-status.is-offline {color:var(--bad);border-color:rgba(255,102,122,.3)}
+.display28-details {font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+.display28-release {color:var(--accent-2);font-size:14px;margin:10px 0}
+.display28-actions {display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.display28-actions button {
+  border:1px solid var(--line);background:var(--surface-3);color:var(--text);
+  border-radius:10px;padding:10px 13px;font-size:14px;cursor:pointer;
+}
+.display28-actions button:disabled {opacity:.4;cursor:not-allowed}
+.display28-actions button:not(:disabled):hover {border-color:var(--accent-2)}
+#display28OtaBtn:not(:disabled) {background:var(--accent-2);color:#07111c;font-weight:700}
+.display28-action-status {font-size:13px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.display28-action-status.is-error {color:var(--bad)}
+.display28-action-status.is-ok {color:var(--good)}
+.display28-help {font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
+.display28-help a {color:var(--accent-2)}
